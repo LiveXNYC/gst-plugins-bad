@@ -2960,7 +2960,7 @@ gst_h264_parse_create_pic_timing_sei (GstH264Parse * h264parse,
     if (gst_buffer_get_size (buffer) >
         h264parse->pic_timing_sei_pos + h264parse->pic_timing_sei_size) {
       gst_buffer_copy_into (out_buf, buffer, GST_BUFFER_COPY_MEMORY,
-          h264parse->pic_timing_sei_pos + h264parse->pic_timing_sei_size, -1);
+          h264parse->pic_timing_sei_pos + h264parse->pic_timing_sei_size + 1, -1);
     }
 
     if (h264parse->idr_pos >= 0) {
