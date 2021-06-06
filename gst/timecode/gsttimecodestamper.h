@@ -52,6 +52,7 @@ typedef enum GstTimeCodeStamperSource
   GST_TIME_CODE_STAMPER_SOURCE_LAST_KNOWN_OR_ZERO,
   GST_TIME_CODE_STAMPER_SOURCE_LTC,
   GST_TIME_CODE_STAMPER_SOURCE_RTC,
+  GST_TIME_CODE_STAMPER_SOURCE_CLOCK,
 } GstTimeCodeStamperSource;
 
 typedef enum GstTimeCodeStamperSet {
@@ -95,6 +96,7 @@ struct _GstTimeCodeStamper
   GstVideoTimeCode *last_tc;
   GstClockTime last_tc_running_time;
   GstVideoTimeCode *rtc_tc;
+  GstVideoTimeCode *clock_tc;
 
   /* Internal state */
   GstVideoInfo vinfo; /* protected by object lock, changed only from video streaming thread */

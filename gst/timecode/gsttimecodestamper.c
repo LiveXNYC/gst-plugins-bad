@@ -182,6 +182,8 @@ gst_timecodestamper_source_get_type (void)
         "Linear timecode from an audio device", "ltc"},
     {GST_TIME_CODE_STAMPER_SOURCE_RTC,
         "Timecode from real time clock", "rtc"},
+    {GST_TIME_CODE_STAMPER_SOURCE_CLOCK,
+        "Timecode from pipeline clock", "clock"},
     {0, NULL, NULL},
   };
 
@@ -360,6 +362,7 @@ gst_timecodestamper_init (GstTimeCodeStamper * timecodestamper)
   timecodestamper->last_tc = NULL;
   timecodestamper->last_tc_running_time = GST_CLOCK_TIME_NONE;
   timecodestamper->rtc_tc = NULL;
+  timecodestamper->clock_tc = NULL;
 
   timecodestamper->seeked_frames = -1;
 
@@ -425,6 +428,10 @@ gst_timecodestamper_dispose (GObject * object)
   if (timecodestamper->rtc_tc != NULL) {
     gst_video_time_code_free (timecodestamper->rtc_tc);
     timecodestamper->rtc_tc = NULL;
+  }
+  if (timecodestamper->clock_tc != NULL) {
+      gst_video_time_code_free(timecodestamper->clock_tc);
+      timecodestamper->clock_tc = NULL;
   }
 #if HAVE_LTC
   g_cond_clear (&timecodestamper->ltc_cond_video);
@@ -641,6 +648,10 @@ gst_timecodestamper_stop (GstBaseTransform * trans)
     gst_video_time_code_free (timecodestamper->rtc_tc);
     timecodestamper->rtc_tc = NULL;
   }
+  if (timecodestamper->clock_tc != NULL) {
+      gst_video_time_code_free(timecodestamper->clock_tc);
+      timecodestamper->clock_tc = NULL;
+  }
 
   if (timecodestamper->last_tc != NULL) {
     gst_video_time_code_free (timecodestamper->last_tc);
@@ -714,6 +725,9 @@ gst_timecodestamper_update_drop_frame (GstTimeCodeStamper * timecodestamper)
     if (timecodestamper->rtc_tc)
       timecodestamper->rtc_tc->config.flags |=
           GST_VIDEO_TIME_CODE_FLAGS_DROP_FRAME;
+    if (timecodestamper->clock_tc)
+        timecodestamper->clock_tc->config.flags |=
+        GST_VIDEO_TIME_CODE_FLAGS_DROP_FRAME;
 #if HAVE_LTC
     {
       GList *l;
@@ -735,6 +749,9 @@ gst_timecodestamper_update_drop_frame (GstTimeCodeStamper * timecodestamper)
     if (timecodestamper->rtc_tc)
       timecodestamper->rtc_tc->config.flags &=
           ~GST_VIDEO_TIME_CODE_FLAGS_DROP_FRAME;
+    if (timecodestamper->clock_tc)
+        timecodestamper->clock_tc->config.flags &=
+        ~GST_VIDEO_TIME_CODE_FLAGS_DROP_FRAME;
 #if HAVE_LTC
     {
       GList *l;
@@ -813,6 +830,8 @@ gst_timecodestamper_update_framerate (GstTimeCodeStamper * timecodestamper,
       timecodestamper->last_tc, FALSE);
   gst_timecodestamper_update_timecode_framerate (timecodestamper, vinfo,
       timecodestamper->rtc_tc, FALSE);
+  gst_timecodestamper_update_timecode_framerate(timecodestamper, vinfo,
+      timecodestamper->clock_tc, FALSE);
 
 #if HAVE_LTC
   {
@@ -1539,6 +1558,27 @@ gst_timecodestamper_transform_ip (GstBaseTransform * vfilter,
     case GST_TIME_CODE_STAMPER_SOURCE_RTC:
       tc = timecodestamper->rtc_tc;
       break;
+    case GST_TIME_CODE_STAMPER_SOURCE_CLOCK:
+        if (timecodestamper->clock_tc == NULL) {
+            GstVideoTimeCode rtc_timecode_now;
+            /* Create timecode for the current frame time */
+            memset(&rtc_timecode_now, 0, sizeof(rtc_timecode_now));
+
+            GDateTime* dt = g_date_time_new_from_unix_utc(clock_time_now / GST_SECOND);
+            memset(&rtc_timecode_now, 0, sizeof(rtc_timecode_now));
+            gst_video_time_code_init_from_date_time_full(&rtc_timecode_now,
+                timecodestamper->vinfo.fps_n, timecodestamper->vinfo.fps_d, dt,
+                tc_flags, 0);
+            timecodestamper->clock_tc = gst_video_time_code_copy(&rtc_timecode_now);
+            g_date_time_unref(dt);
+            gst_video_time_code_clear(&rtc_timecode_now);
+        }
+        else {
+            gst_video_time_code_increment_frame(timecodestamper->clock_tc);
+        }
+      tc = timecodestamper->clock_tc;
+      
+     break;
   }
 
   switch (timecodestamper->tc_set) {
