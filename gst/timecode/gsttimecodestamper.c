@@ -71,7 +71,9 @@ enum
   PROP_LTC_TIMEOUT,
   PROP_RTC_MAX_DRIFT,
   PROP_RTC_AUTO_RESYNC,
-  PROP_TIMECODE_OFFSET
+  PROP_TIMECODE_OFFSET,
+  PROP_CLOCK_AUTO_RESYNC,
+  PROP_CLOCK_MAX_DRIFT
 };
 
 #define DEFAULT_SOURCE GST_TIME_CODE_STAMPER_SOURCE_INTERNAL
@@ -88,6 +90,8 @@ enum
 #define DEFAULT_RTC_MAX_DRIFT 250000000
 #define DEFAULT_RTC_AUTO_RESYNC TRUE
 #define DEFAULT_TIMECODE_OFFSET 0
+#define DEFAULT_CLOCK_AUTO_RESYNC TRUE
+#define DEFAULT_CLOCK_MAX_DRIFT 100000000
 
 #define DEFAULT_LTC_QUEUE 100
 
@@ -310,6 +314,19 @@ gst_timecodestamper_class_init (GstTimeCodeStamperClass * klass)
           "Add this offset in frames to internal, LTC or RTC timecode, "
           "useful if there is an offset between the timecode source and video",
           G_MININT, G_MAXINT, 0, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+  g_object_class_install_property(gobject_class, PROP_CLOCK_AUTO_RESYNC,
+      g_param_spec_boolean("clock-auto-resync",
+          "Clock Auto Resync",
+          "If true the Clock timecode will be automatically resynced if it drifts, "
+          "otherwise it will only be counted up from the last known one",
+          DEFAULT_CLOCK_AUTO_RESYNC, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+  g_object_class_install_property(gobject_class, PROP_CLOCK_MAX_DRIFT,
+      g_param_spec_uint64("clock-max-drift",
+          "Clock Maximum Offset",
+          "Maximum number of nanoseconds the Clock is allowed to drift from "
+          "the video before it is resynced",
+          0, G_MAXUINT64, DEFAULT_CLOCK_MAX_DRIFT,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   gst_element_class_add_pad_template (element_class,
       gst_static_pad_template_get (&gst_timecodestamper_sink_template));
@@ -357,6 +374,8 @@ gst_timecodestamper_init (GstTimeCodeStamper * timecodestamper)
   timecodestamper->rtc_max_drift = DEFAULT_RTC_MAX_DRIFT;
   timecodestamper->rtc_auto_resync = DEFAULT_RTC_AUTO_RESYNC;
   timecodestamper->timecode_offset = 0;
+  timecodestamper->clock_auto_resync = DEFAULT_CLOCK_AUTO_RESYNC;
+  timecodestamper->clock_max_drift = DEFAULT_CLOCK_MAX_DRIFT;
 
   timecodestamper->internal_tc = NULL;
   timecodestamper->last_tc = NULL;
@@ -555,6 +574,12 @@ gst_timecodestamper_set_property (GObject * object, guint prop_id,
     case PROP_TIMECODE_OFFSET:
       timecodestamper->timecode_offset = g_value_get_int (value);
       break;
+    case PROP_CLOCK_AUTO_RESYNC:
+      timecodestamper->clock_auto_resync = g_value_get_boolean(value);
+      break;
+    case PROP_CLOCK_MAX_DRIFT:
+      timecodestamper->clock_max_drift = g_value_get_uint64(value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -612,6 +637,12 @@ gst_timecodestamper_get_property (GObject * object, guint prop_id,
       break;
     case PROP_TIMECODE_OFFSET:
       g_value_set_int (value, timecodestamper->timecode_offset);
+      break;
+    case PROP_CLOCK_AUTO_RESYNC:
+      g_value_set_boolean(value, timecodestamper->clock_auto_resync);
+      break;
+    case PROP_CLOCK_MAX_DRIFT:
+      g_value_set_uint64(value, timecodestamper->clock_max_drift);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -1100,6 +1131,7 @@ gst_timecodestamper_transform_ip (GstBaseTransform * vfilter,
   GstVideoTimeCodeMeta *tc_meta;
   GstFlowReturn flow_ret = GST_FLOW_OK;
   GstVideoTimeCodeFlags tc_flags = 0;
+  gboolean isClockSynchronized = FALSE;
 
   if (timecodestamper->vinfo.fps_n == 0 || timecodestamper->vinfo.fps_d == 0
       || !GST_BUFFER_PTS_IS_VALID (buffer)) {
@@ -1120,6 +1152,7 @@ gst_timecodestamper_transform_ip (GstBaseTransform * vfilter,
   clock = gst_element_get_clock (GST_ELEMENT (timecodestamper));
   if (clock) {
     clock_time_now = gst_clock_get_time (clock);
+    isClockSynchronized = gst_clock_is_synced(clock);
     gst_object_unref (clock);
   } else {
     clock_time_now = GST_CLOCK_TIME_NONE;
@@ -1559,26 +1592,77 @@ gst_timecodestamper_transform_ip (GstBaseTransform * vfilter,
       tc = timecodestamper->rtc_tc;
       break;
     case GST_TIME_CODE_STAMPER_SOURCE_CLOCK:
-        if (timecodestamper->clock_tc == NULL) {
-            GstVideoTimeCode rtc_timecode_now;
-            /* Create timecode for the current frame time */
-            memset(&rtc_timecode_now, 0, sizeof(rtc_timecode_now));
+      if (!isClockSynchronized) {
+         GST_INFO_OBJECT(timecodestamper, "Clock has not synchronized yet");
+         break;
+      }
 
-            GDateTime* dt = g_date_time_new_from_unix_utc(clock_time_now / GST_SECOND);
-            memset(&rtc_timecode_now, 0, sizeof(rtc_timecode_now));
-            gst_video_time_code_init_from_date_time_full(&rtc_timecode_now,
-                timecodestamper->vinfo.fps_n, timecodestamper->vinfo.fps_d, dt,
-                tc_flags, 0);
-            timecodestamper->clock_tc = gst_video_time_code_copy(&rtc_timecode_now);
-            g_date_time_unref(dt);
-            gst_video_time_code_clear(&rtc_timecode_now);
+      GstVideoTimeCode clock_timecode_now, frame_timecode;
+
+      memset(&frame_timecode, 0, sizeof(frame_timecode));
+      gst_video_time_code_init_from_date_time_full(&frame_timecode,
+          timecodestamper->vinfo.fps_n, timecodestamper->vinfo.fps_d, dt_frame,
+          tc_flags, 0);
+
+      memset(&clock_timecode_now, 0, sizeof(clock_timecode_now));
+      GDateTime* dt = g_date_time_new_from_unix_utc(clock_time_now / GST_SECOND);
+      gst_video_time_code_init_from_date_time_full(&clock_timecode_now,
+          timecodestamper->vinfo.fps_n, timecodestamper->vinfo.fps_d, dt,
+          tc_flags, 0);
+      //gst_video_time_code_add_frames(&clock_timecode_now, timecodestamper->rtc_tc->frames);
+      gst_video_time_code_add_frames(&clock_timecode_now, frame_timecode.frames);
+      g_date_time_unref(dt);
+
+      if (timecodestamper->clock_tc == NULL) {
+        /* Create timecode for the current frame time */
+        gchar* tc_str = gst_video_time_code_to_string(&clock_timecode_now);
+        GST_DEBUG_OBJECT(timecodestamper, "Initialized Clock timecode to %s",
+            tc_str);
+        g_free(tc_str);
+
+        timecodestamper->clock_tc = gst_video_time_code_copy(&clock_timecode_now);
+      }
+      else {
+        gst_video_time_code_increment_frame(timecodestamper->clock_tc);
+
+        GstClockTime clock_now_time, clock_tc_time;
+        GstClockTime clock_time_diff;
+        /* Otherwise check if we drifted too much and need to resync */
+       clock_tc_time =
+            gst_video_time_code_nsec_since_daily_jam(timecodestamper->clock_tc);
+        clock_now_time =
+            gst_video_time_code_nsec_since_daily_jam(&clock_timecode_now);
+        if (clock_tc_time > clock_now_time)
+            clock_time_diff = clock_tc_time - clock_now_time;
+        else
+            clock_time_diff = clock_now_time - clock_tc_time;
+
+        if (timecodestamper->clock_auto_resync
+            && timecodestamper->clock_max_drift != GST_CLOCK_TIME_NONE
+            && clock_time_diff > timecodestamper->clock_max_drift) {
+            gst_video_time_code_free(timecodestamper->clock_tc);
+            timecodestamper->clock_tc = gst_video_time_code_copy(&clock_timecode_now);
+            gchar* tc_str = gst_video_time_code_to_string(timecodestamper->clock_tc);
+            GST_DEBUG_OBJECT(timecodestamper,
+                "Updated Clock timecode to %s (%s%" GST_TIME_FORMAT " drift)", tc_str,
+                (clock_tc_time > clock_now_time ? "-" : "+"), GST_TIME_ARGS(clock_time_diff));
+            g_free(tc_str);
         }
         else {
-            gst_video_time_code_increment_frame(timecodestamper->clock_tc);
+            /* Else nothing to do here, we use the current one */
+            gchar* tc_str = gst_video_time_code_to_string(timecodestamper->clock_tc);
+            GST_DEBUG_OBJECT(timecodestamper,
+                "Incremented Clock timecode to %s (%s%" GST_TIME_FORMAT " drift)",
+                tc_str, (clock_tc_time > clock_now_time ? "-" : "+"),
+                GST_TIME_ARGS(clock_time_diff));
+            g_free(tc_str);
         }
+      }
       tc = timecodestamper->clock_tc;
-      
-     break;
+
+      gst_video_time_code_clear(&clock_timecode_now);
+      gst_video_time_code_clear(&frame_timecode);
+      break;
   }
 
   switch (timecodestamper->tc_set) {

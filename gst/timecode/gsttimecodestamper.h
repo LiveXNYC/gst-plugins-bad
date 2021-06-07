@@ -90,6 +90,8 @@ struct _GstTimeCodeStamper
   GstClockTime rtc_max_drift;
   gboolean rtc_auto_resync;
   gint timecode_offset;
+  gboolean clock_auto_resync;
+  GstClockTime clock_max_drift;
 
   /* Timecode tracking, protected by object lock */
   GstVideoTimeCode *internal_tc;
