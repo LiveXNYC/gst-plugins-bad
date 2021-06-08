@@ -645,11 +645,11 @@ gst_h264_parse_process_sei (GstH264Parse * h264parse, GstH264NalUnit * nalu)
           /* FIXME: add support multiple messages in a SEI nalu.
            * Updating only this SEI message and preserving the others
            * is a bit complicated */
-          if (messages->len == 1) {
+          //if (messages->len == 1) {
             h264parse->pic_timing_sei_pos = nalu->sc_offset;
             h264parse->pic_timing_sei_size =
                 nalu->size + (nalu->offset - nalu->sc_offset);
-          }
+          //}
         }
 
         GST_LOG_OBJECT (h264parse, "pic timing updated");
