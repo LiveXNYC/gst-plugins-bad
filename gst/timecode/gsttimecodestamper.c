@@ -1597,21 +1597,18 @@ gst_timecodestamper_transform_ip (GstBaseTransform * vfilter,
          break;
       }
 
-      GstVideoTimeCode clock_timecode_now, frame_timecode;
-
-      memset(&frame_timecode, 0, sizeof(frame_timecode));
-      gst_video_time_code_init_from_date_time_full(&frame_timecode,
-          timecodestamper->vinfo.fps_n, timecodestamper->vinfo.fps_d, dt_frame,
-          tc_flags, 0);
-
+      GstVideoTimeCode clock_timecode_now;
       memset(&clock_timecode_now, 0, sizeof(clock_timecode_now));
+
       GDateTime* dt = g_date_time_new_from_unix_utc(clock_time_now / GST_SECOND);
+      GstClockTime diff_us = GST_TIME_AS_USECONDS(clock_time_now)
+          - GST_TIME_AS_SECONDS(clock_time_now) * G_USEC_PER_SEC;
+      GDateTime* dt1 = g_date_time_add(dt, diff_us);
       gst_video_time_code_init_from_date_time_full(&clock_timecode_now,
-          timecodestamper->vinfo.fps_n, timecodestamper->vinfo.fps_d, dt,
+          timecodestamper->vinfo.fps_n, timecodestamper->vinfo.fps_d, dt1,
           tc_flags, 0);
-      //gst_video_time_code_add_frames(&clock_timecode_now, timecodestamper->rtc_tc->frames);
-      gst_video_time_code_add_frames(&clock_timecode_now, frame_timecode.frames);
       g_date_time_unref(dt);
+      g_date_time_unref(dt1);
 
       if (timecodestamper->clock_tc == NULL) {
         /* Create timecode for the current frame time */
@@ -1649,7 +1646,6 @@ gst_timecodestamper_transform_ip (GstBaseTransform * vfilter,
             g_free(tc_str);
         }
         else {
-            /* Else nothing to do here, we use the current one */
             gchar* tc_str = gst_video_time_code_to_string(timecodestamper->clock_tc);
             GST_DEBUG_OBJECT(timecodestamper,
                 "Incremented Clock timecode to %s (%s%" GST_TIME_FORMAT " drift)",
@@ -1661,7 +1657,6 @@ gst_timecodestamper_transform_ip (GstBaseTransform * vfilter,
       tc = timecodestamper->clock_tc;
 
       gst_video_time_code_clear(&clock_timecode_now);
-      gst_video_time_code_clear(&frame_timecode);
       break;
   }
 
