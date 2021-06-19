@@ -417,7 +417,7 @@ error:
 }
 
 static gboolean
-gst_h264_parse_vui_parameters (GstH264SPS * sps, NalReader * nr)
+gst_h264_parse_vui_parameters (GstH264SPS * sps, NalReader * nr, guint* position)
 {
   GstH264VUIParams *vui = &sps->vui_parameters;
 
@@ -499,6 +499,10 @@ gst_h264_parse_vui_parameters (GstH264SPS * sps, NalReader * nr)
     READ_UINT8 (nr, vui->low_delay_hrd_flag, 1);
 
   READ_UINT8 (nr, vui->pic_struct_present_flag, 1);
+  if (position) {
+      *position = nal_reader_get_pos(nr);
+  }
+
   READ_UINT8 (nr, vui->bitstream_restriction_flag, 1);
   if (vui->bitstream_restriction_flag) {
     READ_UINT8 (nr, vui->motion_vectors_over_pic_boundaries_flag, 1);
@@ -1659,7 +1663,7 @@ gst_h264_parser_parse_sps (GstH264NalParser * nalparser, GstH264NalUnit * nalu,
 
 /* Parse seq_parameter_set_data() */
 static gboolean
-gst_h264_parse_sps_data (NalReader * nr, GstH264SPS * sps)
+gst_h264_parse_sps_data (NalReader * nr, GstH264SPS * sps, guint* position)
 {
   gint width, height;
   guint subwc[] = { 1, 2, 2, 1 };
@@ -1757,7 +1761,7 @@ gst_h264_parse_sps_data (NalReader * nr, GstH264SPS * sps)
 
   READ_UINT8 (nr, sps->vui_parameters_present_flag, 1);
   if (sps->vui_parameters_present_flag)
-    if (!gst_h264_parse_vui_parameters (sps, nr))
+    if (!gst_h264_parse_vui_parameters (sps, nr, position))
       goto error;
 
   /* calculate ChromaArrayType */
@@ -1923,7 +1927,7 @@ gst_h264_parse_sps (GstH264NalUnit * nalu, GstH264SPS * sps)
   nal_reader_init (&nr, nalu->data + nalu->offset + nalu->header_bytes,
       nalu->size - nalu->header_bytes);
 
-  if (!gst_h264_parse_sps_data (&nr, sps))
+  if (!gst_h264_parse_sps_data (&nr, sps, NULL))
     goto error;
 
   sps->valid = TRUE;
@@ -1934,6 +1938,19 @@ error:
   GST_WARNING ("error parsing \"Sequence parameter set\"");
   sps->valid = FALSE;
   return GST_H264_PARSER_ERROR;
+}
+
+guint
+gst_h264_parser_find_sps(GstH264NalUnit* nalu) {
+    NalReader nr;
+    guint result = 0;
+    GST_DEBUG("finding pic_struct_present_flag in SPS");
+
+    nal_reader_init(&nr, nalu->data + nalu->offset + nalu->header_bytes,
+        nalu->size - nalu->header_bytes);
+    GstH264SPS sps;
+    gst_h264_parse_sps_data(&nr, &sps, &result);
+    return result;
 }
 
 /**
@@ -2006,7 +2023,7 @@ gst_h264_parse_subset_sps (GstH264NalUnit * nalu, GstH264SPS * sps)
   nal_reader_init (&nr, nalu->data + nalu->offset + nalu->header_bytes,
       nalu->size - nalu->header_bytes);
 
-  if (!gst_h264_parse_sps_data (&nr, sps))
+  if (!gst_h264_parse_sps_data (&nr, sps, NULL))
     goto error;
 
   if (sps->profile_idc == GST_H264_PROFILE_MULTIVIEW_HIGH ||
