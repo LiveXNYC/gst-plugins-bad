@@ -2992,6 +2992,26 @@ gst_h264_parse_create_pic_timing_sei (GstH264Parse * h264parse,
   return out_buf;
 }
 
+static void
+gst_h264_parse_set_pic_struct_present_flag(GstH264Parse* h264parse,
+    GstBuffer* buffer) {
+
+    if (!h264parse->update_timecode 
+        || gst_buffer_get_n_meta(buffer, GST_VIDEO_TIME_CODE_META_API_TYPE) == 0)
+        return;
+
+    if (h264parse->pic_struct_present_flag_position) {
+        guint index = h264parse->pic_struct_present_flag_position / 8;
+        guint bitIndex = h264parse->pic_struct_present_flag_position % 8;
+        gint8 maska = (0x80 >> bitIndex) & 0xff;
+        GstMapInfo info;
+        if (gst_buffer_map(buffer, &info, GST_MAP_WRITE)) {
+            info.data[index] |= maska;
+            gst_buffer_unmap(buffer, &info);
+        }
+    }
+}
+
 static GstBuffer*
 gst_h264_parse_force_create_pic_timing_sei(GstH264Parse* h264parse,
     GstBuffer* buffer)
@@ -3017,18 +3037,6 @@ gst_h264_parse_force_create_pic_timing_sei(GstH264Parse* h264parse,
     num_meta = gst_buffer_get_n_meta(buffer, GST_VIDEO_TIME_CODE_META_API_TYPE);
     if (num_meta == 0)
         return NULL;
-
-    if (h264parse->pic_struct_present_flag_position) {
-        h264parse->pic_struct_present_flag_position -= 1;
-        guint index = h264parse->pic_struct_present_flag_position / 8;
-        guint bitIndex = h264parse->pic_struct_present_flag_position % 8;
-        gint8 maska = (0x80 >> bitIndex) & 0xff;
-        GstMapInfo info;
-        if (gst_buffer_map(buffer, &info, GST_MAP_WRITE)) {
-            info.data[index] |= maska;
-            gst_buffer_unmap(buffer, &info);
-        }
-    }
 
     g_assert(h264parse->sei_pic_struct <=
         GST_H264_SEI_PIC_STRUCT_FRAME_TRIPLING);
@@ -3243,6 +3251,9 @@ gst_h264_parse_pre_push_frame (GstBaseParse * parse, GstBaseParseFrame * frame)
               GST_BUFFER_FLAGS (buffer), h264parse->pending_key_unit_ts))) {
     gst_h264_parse_prepare_key_unit (h264parse, event);
   }
+
+  /* set pic_struct_present_flag in SPS if will be needed force_create_pic_timing_sei */
+  gst_h264_parse_set_pic_struct_present_flag(h264parse, buffer);
 
   /* handle timecode */
   new_buf = gst_h264_parse_create_pic_timing_sei (h264parse, buffer);

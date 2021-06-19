@@ -498,10 +498,10 @@ gst_h264_parse_vui_parameters (GstH264SPS * sps, NalReader * nr, guint* position
       vui->vcl_hrd_parameters_present_flag)
     READ_UINT8 (nr, vui->low_delay_hrd_flag, 1);
 
-  READ_UINT8 (nr, vui->pic_struct_present_flag, 1);
   if (position) {
       *position = nal_reader_get_pos(nr);
   }
+  READ_UINT8 (nr, vui->pic_struct_present_flag, 1);
 
   READ_UINT8 (nr, vui->bitstream_restriction_flag, 1);
   if (vui->bitstream_restriction_flag) {
