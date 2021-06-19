@@ -2997,18 +2997,17 @@ gst_h264_parse_set_pic_struct_present_flag(GstH264Parse* h264parse,
     GstBuffer* buffer) {
 
     if (!h264parse->update_timecode 
+        || h264parse->pic_struct_present_flag_position == 0
         || gst_buffer_get_n_meta(buffer, GST_VIDEO_TIME_CODE_META_API_TYPE) == 0)
         return;
 
-    if (h264parse->pic_struct_present_flag_position) {
-        guint index = h264parse->pic_struct_present_flag_position / 8;
-        guint bitIndex = h264parse->pic_struct_present_flag_position % 8;
-        gint8 maska = (0x80 >> bitIndex) & 0xff;
-        GstMapInfo info;
-        if (gst_buffer_map(buffer, &info, GST_MAP_WRITE)) {
-            info.data[index] |= maska;
-            gst_buffer_unmap(buffer, &info);
-        }
+    guint index = h264parse->pic_struct_present_flag_position / 8;
+    guint bitIndex = h264parse->pic_struct_present_flag_position % 8;
+    gint8 mask = 0x80 >> bitIndex;
+    GstMapInfo info;
+    if (gst_buffer_map(buffer, &info, GST_MAP_WRITE)) {
+        info.data[index] |= mask;
+        gst_buffer_unmap(buffer, &info);
     }
 }
 
