@@ -110,6 +110,7 @@ struct _GstH265Parse
   gboolean predicted;
   gboolean bidirectional;
   gboolean header;
+  gint force_time_code_sei_pos;
   /* AU state */
   gboolean picture_start;
 
@@ -117,6 +118,7 @@ struct _GstH265Parse
 
   /* props */
   gint interval;
+  gboolean update_timecode;
 
   GstClockTime pending_key_unit_ts;
   GstEvent *force_key_unit_event;

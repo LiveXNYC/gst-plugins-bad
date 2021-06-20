@@ -36,7 +36,8 @@ GST_DEBUG_CATEGORY (h265_parse_debug);
 enum
 {
   PROP_0,
-  PROP_CONFIG_INTERVAL
+  PROP_CONFIG_INTERVAL,
+  PROP_UPDATE_TIMECODE,
 };
 
 enum
@@ -139,6 +140,14 @@ gst_h265_parse_class_init (GstH265ParseClass * klass)
           "(0 = disabled, -1 = send with every IDR frame)",
           -1, 3600, DEFAULT_CONFIG_INTERVAL,
           G_PARAM_READWRITE | G_PARAM_CONSTRUCT | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property(gobject_class, PROP_UPDATE_TIMECODE,
+      g_param_spec_boolean("update-timecode",
+          "Update Timecode",
+          "Update time code values in Time Code SEI if GstVideoTimeCodeMeta "
+          "is attached to incoming buffer. ",
+          FALSE, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
   /* Override BaseParse vfuncs */
   parse_class->start = GST_DEBUG_FUNCPTR (gst_h265_parse_start);
   parse_class->stop = GST_DEBUG_FUNCPTR (gst_h265_parse_stop);
@@ -198,6 +207,7 @@ gst_h265_parse_reset_frame (GstH265Parse * h265parse)
   h265parse->have_vps_in_frame = FALSE;
   h265parse->have_sps_in_frame = FALSE;
   h265parse->have_pps_in_frame = FALSE;
+  h265parse->force_time_code_sei_pos = -1;
   gst_adapter_clear (h265parse->frame_out);
 }
 
@@ -891,6 +901,8 @@ gst_h265_parse_process_nal (GstH265Parse * h265parse, GstH265NalUnit * nalu)
           h265parse->bidirectional = TRUE;
 
         h265parse->state |= GST_H265_PARSE_STATE_GOT_SLICE;
+
+        h265parse->force_time_code_sei_pos = nalu->sc_offset;
       }
       if (slice.first_slice_segment_in_pic_flag == 1)
         GST_DEBUG_OBJECT (h265parse,
@@ -2638,11 +2650,85 @@ gst_h265_parse_handle_vps_sps_pps_nals (GstH265Parse * h265parse,
   return send_done;
 }
 
+static GstBuffer*
+gst_h265_parse_create_time_code_sei(GstH265Parse* h265parse, GstBuffer* buffer) {
+    GArray* msg_array = NULL;
+    GstBuffer* out_buf = NULL;
+    GstH265SEIMessage sei_message;
+    gpointer iter = NULL;
+
+    //  vps_timing_info_present_flag ?
+
+    if (!h265parse->update_timecode
+        || !GST_H265_PARSE_STATE_VALID(h265parse, GST_H265_PARSE_STATE_GOT_SPS)
+        || gst_buffer_get_n_meta(buffer, GST_VIDEO_TIME_CODE_META_API_TYPE) == 0)
+        return NULL;
+
+    memset(&sei_message, 0, sizeof(GstH265SEIMessage));
+    sei_message.payloadType = GST_H265_SEI_TIME_CODE;
+
+    GstVideoTimeCodeMeta* tc_meta;
+    if ((tc_meta =
+        (GstVideoTimeCodeMeta*)gst_buffer_iterate_meta_filtered(buffer,
+            &iter, GST_VIDEO_TIME_CODE_META_API_TYPE))) {
+        
+        GstVideoTimeCode* tc = &tc_meta->tc;
+
+        GstH265TimeCode* time_code = &sei_message.payload.time_code;
+        time_code->num_clock_ts = 1;
+        time_code->clock_timestamp_flag[0] = 1;
+        time_code->counting_type[0] = 4;
+        time_code->full_timestamp_flag[0] = 1;
+        time_code->n_frames[0] = tc->frames;
+        time_code->seconds_value[0] = tc->seconds;
+        time_code->minutes_value[0] = tc->minutes;
+        time_code->hours_value[0] = tc->hours;
+        time_code->time_offset_length[0] = 0;
+    }
+    
+    msg_array = g_array_new(FALSE, FALSE, sizeof(GstH265SEIMessage));
+    g_array_set_clear_func(msg_array, (GDestroyNotify)gst_h265_sei_free);
+    g_array_append_val(msg_array, sei_message);
+
+    GstMemory* sei_mem = gst_h265_create_sei_memory(0, 1, 4, msg_array);
+    g_array_unref(msg_array);
+
+    if (!sei_mem) {
+        GST_WARNING_OBJECT(h265parse, "Cannot create Time Code SEI memory");
+        return NULL;
+    }
+
+    out_buf = gst_buffer_new();
+    gst_buffer_copy_into(out_buf, buffer, GST_BUFFER_COPY_METADATA, 0, -1);
+
+    gsize mem_size = gst_memory_get_sizes(sei_mem, NULL, NULL);
+    /* copy every data except for the SEI */
+    if (h265parse->force_time_code_sei_pos > 0) {
+        gst_buffer_copy_into(out_buf, buffer, GST_BUFFER_COPY_MEMORY, 0,
+            h265parse->force_time_code_sei_pos + 1);
+    }
+
+    h265parse->header = TRUE;
+    /* insert new SEI */
+    gst_buffer_append_memory(out_buf, sei_mem);
+
+    gst_buffer_copy_into(out_buf, buffer, GST_BUFFER_COPY_MEMORY,
+        h265parse->force_time_code_sei_pos + 1, -1);
+
+    if (h265parse->idr_pos >= 0) {
+        h265parse->idr_pos += mem_size;
+        //h265parse->idr_pos -= h265parse->force_pic_timing_sei_size;
+    }
+    return out_buf;
+}
+
+
 static GstFlowReturn
 gst_h265_parse_pre_push_frame (GstBaseParse * parse, GstBaseParseFrame * frame)
 {
   GstH265Parse *h265parse;
   GstBuffer *buffer;
+  GstBuffer* new_buf;
   GstEvent *event;
   GstBuffer *parse_buffer = NULL;
 
@@ -2682,6 +2768,14 @@ gst_h265_parse_pre_push_frame (GstBaseParse * parse, GstBaseParseFrame * frame)
               &parse->segment, GST_BUFFER_TIMESTAMP (buffer),
               GST_BUFFER_FLAGS (buffer), h265parse->pending_key_unit_ts))) {
     gst_h265_parse_prepare_key_unit (h265parse, event);
+  }
+
+  new_buf = gst_h265_parse_create_time_code_sei(h265parse, buffer);
+  if (new_buf) {
+      if (frame->out_buffer)
+          gst_buffer_unref(frame->out_buffer);
+
+      buffer = frame->out_buffer = new_buf;
   }
 
   /* periodic VPS/SPS/PPS sending */
@@ -3202,6 +3296,9 @@ gst_h265_parse_set_property (GObject * object, guint prop_id,
     case PROP_CONFIG_INTERVAL:
       parse->interval = g_value_get_int (value);
       break;
+    case PROP_UPDATE_TIMECODE:
+        parse->update_timecode = g_value_get_boolean(value);
+        break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -3219,6 +3316,9 @@ gst_h265_parse_get_property (GObject * object, guint prop_id, GValue * value,
     case PROP_CONFIG_INTERVAL:
       g_value_set_int (value, parse->interval);
       break;
+    case PROP_UPDATE_TIMECODE:
+        g_value_set_boolean(value, parse->update_timecode);
+        break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
