@@ -3009,7 +3009,9 @@ gst_h264_parse_force_create_pic_timing_sei(GstH264Parse* h264parse,
     GstBuffer* out_buf = NULL;
     GstMemory* sei_mem;
 
-    if (!h264parse->update_timecode)
+    if (!h264parse->update_timecode
+        || !GST_H264_PARSE_STATE_VALID(h264parse,
+            GST_H264_PARSE_STATE_VALID_PICTURE_HEADERS))
         return NULL;
 
     sei_mem = gst_h264_parse_create_sei_memory(h264parse, buffer);
@@ -3033,12 +3035,9 @@ gst_h264_parse_force_create_pic_timing_sei(GstH264Parse* h264parse,
                 h264parse->force_pic_timing_sei_pos  + 1);
         }
 
-        if (GST_H264_PARSE_STATE_VALID(h264parse,
-            GST_H264_PARSE_STATE_VALID_PICTURE_HEADERS)) {
-            h264parse->header = TRUE;
-            /* insert new SEI */
-            gst_buffer_append_memory(out_buf, sei_mem);
-        }
+        h264parse->header = TRUE;
+        /* insert new SEI */
+        gst_buffer_append_memory(out_buf, sei_mem);
 
         gst_buffer_copy_into(out_buf, buffer, GST_BUFFER_COPY_MEMORY,
             h264parse->force_pic_timing_sei_pos + 1, -1);

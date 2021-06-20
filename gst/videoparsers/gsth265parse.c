@@ -2717,7 +2717,7 @@ gst_h265_parse_create_time_code_sei(GstH265Parse* h265parse, GstBuffer* buffer) 
 
     if (h265parse->idr_pos >= 0) {
         h265parse->idr_pos += mem_size;
-        //h265parse->idr_pos -= h265parse->force_pic_timing_sei_size;
+        h265parse->idr_pos -= 6; // SEI message size
     }
     return out_buf;
 }
