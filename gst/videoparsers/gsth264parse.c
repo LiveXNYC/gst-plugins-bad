@@ -227,7 +227,6 @@ gst_h264_parse_reset_frame (GstH264Parse * h264parse)
   h264parse->pic_timing_sei_pos = -1;
   h264parse->pic_timing_sei_size = -1;
   h264parse->force_pic_timing_sei_pos = -1;
-  h264parse->force_pic_timing_sei_size = -1;
   h264parse->pic_struct_present_flag_position = 0;
   h264parse->keyframe = FALSE;
   h264parse->predicted = FALSE;
@@ -1144,7 +1143,6 @@ gst_h264_parse_process_nal (GstH264Parse * h264parse, GstH264NalUnit * nalu)
       h264parse->aud_needed = FALSE;
 
       h264parse->force_pic_timing_sei_pos = nalu->sc_offset + (nalu->size + (nalu->offset - nalu->sc_offset)) - 1;
-      h264parse->force_pic_timing_sei_size = 9;
       break;
     default:
       /* drop anything before the initial SPS */
@@ -2952,10 +2950,8 @@ static GstBuffer *
 gst_h264_parse_create_pic_timing_sei (GstH264Parse * h264parse,
     GstBuffer * buffer)
 {
-  guint num_clock_ts;
   GstBuffer *out_buf = NULL;
   GstMemory *sei_mem;
-
 
   if (!h264parse->update_timecode)
     return NULL;
@@ -3006,25 +3002,6 @@ gst_h264_parse_create_pic_timing_sei (GstH264Parse * h264parse,
   return out_buf;
 }
 
-static void
-gst_h264_parse_set_pic_struct_present_flag(GstH264Parse* h264parse,
-    GstBuffer* buffer) {
-
-    if (!h264parse->update_timecode 
-        || h264parse->pic_struct_present_flag_position == 0
-        || gst_buffer_get_n_meta(buffer, GST_VIDEO_TIME_CODE_META_API_TYPE) == 0)
-        return;
-
-    guint index = h264parse->pic_struct_present_flag_position / 8;
-    guint bitIndex = h264parse->pic_struct_present_flag_position % 8;
-    gint8 mask = 0x80 >> bitIndex;
-    GstMapInfo info;
-    if (gst_buffer_map(buffer, &info, GST_MAP_WRITE)) {
-        info.data[index] |= mask;
-        gst_buffer_unmap(buffer, &info);
-    }
-}
-
 static GstBuffer*
 gst_h264_parse_force_create_pic_timing_sei(GstH264Parse* h264parse,
     GstBuffer* buffer)
@@ -3068,11 +3045,30 @@ gst_h264_parse_force_create_pic_timing_sei(GstH264Parse* h264parse,
 
         if (h264parse->idr_pos >= 0) {
             h264parse->idr_pos += mem_size;
-            h264parse->idr_pos -= h264parse->force_pic_timing_sei_size;
+            h264parse->idr_pos -= 9; // SEI message size
         }
     }
 
     return out_buf;
+}
+
+static void
+gst_h264_parse_set_pic_struct_present_flag(GstH264Parse* h264parse,
+    GstBuffer* buffer) {
+
+    if (!h264parse->update_timecode
+        || h264parse->pic_struct_present_flag_position == 0
+        || gst_buffer_get_n_meta(buffer, GST_VIDEO_TIME_CODE_META_API_TYPE) == 0)
+        return;
+
+    guint index = h264parse->pic_struct_present_flag_position / 8;
+    guint bitIndex = h264parse->pic_struct_present_flag_position % 8;
+    gint8 mask = 0x80 >> bitIndex;
+    GstMapInfo info;
+    if (gst_buffer_map(buffer, &info, GST_MAP_WRITE)) {
+        info.data[index] |= mask;
+        gst_buffer_unmap(buffer, &info);
+    }
 }
 
 static GstFlowReturn
