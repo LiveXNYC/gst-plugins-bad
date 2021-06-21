@@ -167,6 +167,7 @@ gst_mf_device_provider_probe (GstDeviceProvider * provider)
   GstMFDeviceProvider *self = GST_MF_DEVICE_PROVIDER (provider);
   GList *list = NULL;
   gint i;
+  gint errorCounter = 0;
 
   for (i = 0;; i++) {
     GstMFSourceObject *obj = NULL;
@@ -178,8 +179,12 @@ gst_mf_device_provider_probe (GstDeviceProvider * provider)
 
     obj = gst_mf_source_object_new (GST_MF_SOURCE_TYPE_VIDEO,
         i, NULL, NULL, NULL);
-    if (!obj)
-      break;
+    if (!obj) {
+        if (++errorCounter == 10) {
+            break;
+        }
+        continue;
+    }
 
     caps = gst_mf_source_object_get_caps (obj);
     if (!caps) {
