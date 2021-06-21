@@ -68,7 +68,7 @@ HRESULT StartAsyncThen(_In_ ABI::Windows::Foundation::IAsyncAction* pOperation, 
 template <typename TProgress, typename TLambda>
 HRESULT StartAsyncThen(_In_ ABI::Windows::Foundation::IAsyncActionWithProgress<TProgress>* pOperation, _In_ TLambda&& tFunc)
 {
-    return StartAsyncThen<ABI::Windows::Foundation::IAsyncActionWithProgressCompletedHandler<TProgress>, Windows::Foundation::IAsyncActionWithProgress<TProgress>>(pOperation, static_cast<TLambda&&>(tFunc));
+    return StartAsyncThen<ABI::Windows::Foundation::IAsyncActionWithProgressCompletedHandler<TProgress>, ABI::Windows::Foundation::IAsyncActionWithProgress<TProgress>>(pOperation, static_cast<TLambda&&>(tFunc));
 }
 template <typename TResult, typename TLambda>
 HRESULT StartAsyncThen(_In_ ABI::Windows::Foundation::IAsyncOperation<TResult>* pOperation, _In_ TLambda&& tFunc)
