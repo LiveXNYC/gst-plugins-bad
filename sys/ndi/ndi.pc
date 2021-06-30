@@ -1,0 +1,10 @@
+prefix=C:/projects/repos/cerbero.git/1.18/build/dist/msvc_x86_64
+exec_prefix=${prefix}
+libdir=${exec_prefix}/lib
+includedir=${prefix}/include
+
+Name: srt
+Description: NDI library set
+Version: 1.4.1
+Libs: -L${libdir} -lProcessing.NDI.Lib.x64
+Cflags: -I${includedir} -I${includedir}/ndi
