@@ -2684,6 +2684,11 @@ gst_h265_parse_create_time_code_sei(GstH265Parse* h265parse, GstBuffer* buffer) 
         time_code->minutes_value[0] = tc->minutes;
         time_code->hours_value[0] = tc->hours;
         time_code->time_offset_length[0] = 0;
+
+        GST_LOG_OBJECT(h265parse,
+            "New time code value %02u:%02u:%02u:%02u",
+            time_code->hours_value[0], time_code->minutes_value[0],
+            time_code->seconds_value[0], time_code->n_frames[0]);
     }
     
     msg_array = g_array_new(FALSE, FALSE, sizeof(GstH265SEIMessage));
