@@ -1597,66 +1597,39 @@ gst_timecodestamper_transform_ip (GstBaseTransform * vfilter,
          break;
       }
 
-      GstVideoTimeCode clock_timecode_now;
-      memset(&clock_timecode_now, 0, sizeof(clock_timecode_now));
-
-      GDateTime* dt = g_date_time_new_from_unix_utc(clock_time_now / GST_SECOND);
-      GstClockTime diff_us = GST_TIME_AS_USECONDS(clock_time_now)
-          - GST_TIME_AS_SECONDS(clock_time_now) * G_USEC_PER_SEC;
-      GDateTime* dt1 = g_date_time_add(dt, diff_us);
-      gst_video_time_code_init_from_date_time_full(&clock_timecode_now,
-          timecodestamper->vinfo.fps_n, timecodestamper->vinfo.fps_d, dt1,
-          tc_flags, 0);
-      g_date_time_unref(dt);
-      g_date_time_unref(dt1);
-
       if (timecodestamper->clock_tc == NULL) {
-        /* Create timecode for the current frame time */
+          GstVideoTimeCode clock_timecode_now;
+          memset(&clock_timecode_now, 0, sizeof(clock_timecode_now));
+
+          GDateTime* dt = g_date_time_new_from_unix_utc(clock_time_now / GST_SECOND);
+          GstClockTime diff_us = GST_TIME_AS_USECONDS(clock_time_now)
+              - GST_TIME_AS_SECONDS(clock_time_now) * G_USEC_PER_SEC;
+          GDateTime* dt1 = g_date_time_add(dt, diff_us);
+          gst_video_time_code_init_from_date_time_full(&clock_timecode_now,
+              timecodestamper->vinfo.fps_n, timecodestamper->vinfo.fps_d, dt1,
+              tc_flags, 0);
+          g_date_time_unref(dt);
+          g_date_time_unref(dt1);
+          
+          /* Create timecode for the current frame time */
         gchar* tc_str = gst_video_time_code_to_string(&clock_timecode_now);
-        GST_DEBUG_OBJECT(timecodestamper, "Initialized Clock timecode to %s",
+        GST_LOG_OBJECT(timecodestamper, "Initialized Clock timecode to %s",
             tc_str);
         g_free(tc_str);
 
         timecodestamper->clock_tc = gst_video_time_code_copy(&clock_timecode_now);
+
+        gst_video_time_code_clear(&clock_timecode_now);
       }
       else {
         gst_video_time_code_increment_frame(timecodestamper->clock_tc);
 
-        GstClockTime clock_now_time, clock_tc_time;
-        GstClockTime clock_time_diff;
-        /* Otherwise check if we drifted too much and need to resync */
-       clock_tc_time =
-            gst_video_time_code_nsec_since_daily_jam(timecodestamper->clock_tc);
-        clock_now_time =
-            gst_video_time_code_nsec_since_daily_jam(&clock_timecode_now);
-        if (clock_tc_time > clock_now_time)
-            clock_time_diff = clock_tc_time - clock_now_time;
-        else
-            clock_time_diff = clock_now_time - clock_tc_time;
-
-        if (timecodestamper->clock_auto_resync
-            && timecodestamper->clock_max_drift != GST_CLOCK_TIME_NONE
-            && clock_time_diff > timecodestamper->clock_max_drift) {
-            gst_video_time_code_free(timecodestamper->clock_tc);
-            timecodestamper->clock_tc = gst_video_time_code_copy(&clock_timecode_now);
-            gchar* tc_str = gst_video_time_code_to_string(timecodestamper->clock_tc);
-            GST_DEBUG_OBJECT(timecodestamper,
-                "Updated Clock timecode to %s (%s%" GST_TIME_FORMAT " drift)", tc_str,
-                (clock_tc_time > clock_now_time ? "-" : "+"), GST_TIME_ARGS(clock_time_diff));
-            g_free(tc_str);
-        }
-        else {
-            gchar* tc_str = gst_video_time_code_to_string(timecodestamper->clock_tc);
-            GST_DEBUG_OBJECT(timecodestamper,
-                "Incremented Clock timecode to %s (%s%" GST_TIME_FORMAT " drift)",
-                tc_str, (clock_tc_time > clock_now_time ? "-" : "+"),
-                GST_TIME_ARGS(clock_time_diff));
-            g_free(tc_str);
-        }
+        gchar* tc_str = gst_video_time_code_to_string(timecodestamper->clock_tc);
+        GST_LOG_OBJECT(timecodestamper, "Incremented Clock timecode to %s", tc_str);
+        g_free(tc_str);
       }
-      tc = timecodestamper->clock_tc;
 
-      gst_video_time_code_clear(&clock_timecode_now);
+      tc = timecodestamper->clock_tc;
       break;
   }
 
