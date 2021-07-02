@@ -2846,14 +2846,15 @@ gst_h264_parse_create_sei_memory(GstH264Parse* h264parse,
         GST_H264_SEI_PIC_STRUCT_FRAME_TRIPLING);
 
     num_clock_ts = num_clock_ts_table[h264parse->sei_pic_struct];
-
+    /*
+    * BlackMagic create 2 meta
     if (num_meta != num_clock_ts) {
         GST_LOG_OBJECT(h264parse,
             "The number of timecode meta %d is not equal to required %d",
             num_meta, num_clock_ts);
 
         return NULL;
-    }
+    }*/
 
     GST_LOG_OBJECT(h264parse,
         "The number of timecode meta %d is equal", num_meta);
@@ -2919,12 +2920,14 @@ gst_h264_parse_create_sei_memory(GstH264Parse* h264parse,
         else if (tc->seconds > 0)
             tim->seconds_flag = 1;
 
-        GST_LOG_OBJECT(h264parse,
+        GST_INFO_OBJECT(h264parse,
             "New time code value %02u:%02u:%02u:%02u",
             tim->hours_value, tim->minutes_value, tim->seconds_value,
             tim->n_frames);
 
         i++;
+        // Update just the first meta
+        break;
     }
 
     for (j = i; j < 3; j++)
