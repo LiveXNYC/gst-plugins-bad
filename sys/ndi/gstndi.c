@@ -15,11 +15,14 @@ GST_DEBUG_CATEGORY(gst_ndi_source_object_debug);
 static void
 plugin_deinit(gpointer data)
 {
+    NDIlib_destroy();
 }
 
 static gboolean
 plugin_init(GstPlugin* plugin)
 {
+    if (!NDIlib_initialize()) return FALSE;
+
     GstRank rank = GST_RANK_SECONDARY;
 
     /**
@@ -34,7 +37,6 @@ plugin_init(GstPlugin* plugin)
 
     gst_element_register(plugin, "ndivideosrc", GST_RANK_NONE,
         GST_TYPE_NDI_VIDEO_SRC);
-
 
     //gst_element_register(plugin, "ndivideosrc", rank, GST_TYPE_NDI_VIDEO_SRC);
     gst_device_provider_register(plugin, "ndideviceprovider",
