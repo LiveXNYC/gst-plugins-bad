@@ -50,16 +50,12 @@ static GstCaps *gst_ndi_video_src_get_caps (GstBaseSrc * src, GstCaps * filter);
 static GstCaps *gst_ndi_video_src_fixate (GstBaseSrc * src, GstCaps * caps);
 static gboolean gst_ndi_video_src_unlock (GstBaseSrc * src);
 static gboolean gst_ndi_video_src_unlock_stop (GstBaseSrc * src);
-static gboolean gst_ndi_video_src_query(GstBaseSrc* bsrc, GstQuery* query);
 
 static GstFlowReturn gst_ndi_video_src_create(GstPushSrc* pushsrc,
     GstBuffer ** buffer);
 
 static GstFlowReturn
 gst_ndi_video_src_fill(GstPushSrc* pushsrc, GstBuffer* buf);
-
-static GstStateChangeReturn
-gst_ndi_video_src_change_state(GstElement* element, GstStateChange transition);
 
 #define gst_ndi_video_src_parent_class parent_class
 G_DEFINE_TYPE (GstNdiVideoSrc, gst_ndi_video_src, GST_TYPE_PUSH_SRC);
@@ -126,12 +122,9 @@ gst_ndi_video_src_class_init (GstNdiVideoSrcClass * klass)
   basesrc_class->fixate = GST_DEBUG_FUNCPTR (gst_ndi_video_src_fixate);
   basesrc_class->unlock = GST_DEBUG_FUNCPTR (gst_ndi_video_src_unlock);
   basesrc_class->unlock_stop = GST_DEBUG_FUNCPTR (gst_ndi_video_src_unlock_stop);
-  //basesrc_class->query = GST_DEBUG_FUNCPTR(gst_ndi_video_src_query);
 
   pushsrc_class->create = GST_DEBUG_FUNCPTR (gst_ndi_video_src_create);
   //pushsrc_class->fill = GST_DEBUG_FUNCPTR(gst_ndi_video_src_fill);
-
-  //element_class->change_state = GST_DEBUG_FUNCPTR(gst_ndi_video_src_change_state);
 
   GST_DEBUG_CATEGORY_INIT (gst_ndi_video_src_debug, "ndivideosrc", 0,
       "ndivideosrc");
@@ -266,14 +259,6 @@ gst_ndi_video_src_start (GstBaseSrc * src)
       }
   }
 
-
-  /*self->source = gst_mf_source_object_new (GST_MF_SOURCE_TYPE_VIDEO,
-      self->device_index, self->device_name, self->device_path, NULL);
-
-  self->first_pts = GST_CLOCK_TIME_NONE;
-  self->n_frames = 0;
-
-  return ! !self->source;*/
   return TRUE;
 }
 
@@ -287,14 +272,6 @@ gst_ndi_video_src_stop (GstBaseSrc * src)
       self->pNDI_recv = NULL;
   }
 
-/*  if (self->source) {
-    gst_mf_source_object_stop (self->source);
-    gst_object_unref (self->source);
-    self->source = NULL;
-  }
-
-  self->started = FALSE;*/
-
   return TRUE;
 }
 
@@ -305,20 +282,6 @@ gst_ndi_video_src_set_caps (GstBaseSrc * src, GstCaps * caps)
 
   GST_DEBUG_OBJECT (self, "Set caps %" GST_PTR_FORMAT, caps);
 
-  /*  if (!self->source) {
-    GST_ERROR_OBJECT (self, "No capture engine yet");
-    return FALSE;
-  }
-
-  if (!gst_mf_source_object_set_caps (self->source, caps)) {
-    GST_ERROR_OBJECT (self, "CaptureEngine couldn't accept caps");
-    return FALSE;
-  }
-
-  gst_video_info_from_caps (&self->info, caps);
-  if (GST_VIDEO_INFO_FORMAT (&self->info) != GST_VIDEO_FORMAT_ENCODED)
-    gst_base_src_set_blocksize (src, GST_VIDEO_INFO_SIZE (&self->info));
-    */
   return TRUE;
 }
 
@@ -327,10 +290,6 @@ gst_ndi_video_src_get_caps (GstBaseSrc * src, GstCaps * filter)
 {
   GstNdiVideoSrc *self = GST_NDI_VIDEO_SRC(src);
   GstCaps *caps = NULL;
-
-
-  /*if (self->source)
-    caps = gst_mf_source_object_get_caps (self->source);*/
 
   if (self->pNDI_recv != NULL) {
       NDIlib_video_frame_v2_t video_frame = gst_ndi_util_get_video_frame(self->pNDI_recv, 5000);
@@ -341,7 +300,6 @@ gst_ndi_video_src_get_caps (GstBaseSrc * src, GstCaps * filter)
       }
   }
 
-  //caps = gst_util_create_default_videro_caps();
   if (!caps)
     caps = gst_pad_get_pad_template_caps (GST_BASE_SRC_PAD (src));
 
@@ -356,8 +314,7 @@ gst_ndi_video_src_get_caps (GstBaseSrc * src, GstCaps * filter)
 }
 
 static GstCaps *
-gst_ndi_video_src_fixate (GstBaseSrc * src, GstCaps * caps)
-{
+gst_ndi_video_src_fixate (GstBaseSrc * src, GstCaps * caps) {
   GstStructure *structure;
   GstCaps *fixated_caps;
   guint i;
@@ -380,23 +337,15 @@ gst_ndi_video_src_fixate (GstBaseSrc * src, GstCaps * caps)
 }
 
 static gboolean
-gst_ndi_video_src_unlock (GstBaseSrc * src)
-{
+gst_ndi_video_src_unlock (GstBaseSrc * src) {
   GstNdiVideoSrc *self = GST_NDI_VIDEO_SRC(src);
-
-  /*if (self->source)
-    gst_mf_source_object_set_flushing (self->source, TRUE);*/
 
   return TRUE;
 }
 
 static gboolean
-gst_ndi_video_src_unlock_stop (GstBaseSrc * src)
-{
+gst_ndi_video_src_unlock_stop (GstBaseSrc * src) {
   GstNdiVideoSrc *self = GST_NDI_VIDEO_SRC(src);
-
-  /*if (self->source)
-    gst_mf_source_object_set_flushing (self->source, FALSE);*/
 
   return TRUE;
 }
@@ -486,75 +435,3 @@ gst_ndi_video_src_create (GstPushSrc * pushsrc, GstBuffer ** buffer)
   return GST_FLOW_OK;
 }
 
-
-
-
-
-
-static GstStateChangeReturn
-gst_ndi_video_src_change_state(GstElement* element, GstStateChange transition) {
-    GstNdiVideoSrc* self = GST_NDI_VIDEO_SRC(element);
-    GstStateChangeReturn ret;
-
-    switch (transition) {
-    case GST_STATE_CHANGE_NULL_TO_READY: {
-    }
-    break;
-    case GST_STATE_CHANGE_READY_TO_PAUSED:
-        break;
-    case GST_STATE_CHANGE_PAUSED_TO_PLAYING:
-        break;
-    }
-
-    ret = GST_ELEMENT_CLASS(parent_class)->change_state(element, transition);
-    if (ret == GST_STATE_CHANGE_FAILURE)
-        return ret;
-
-    switch (transition) {
-    case GST_STATE_CHANGE_PLAYING_TO_PAUSED:
-        break;
-    case GST_STATE_CHANGE_PAUSED_TO_READY:
-        break;
-    case GST_STATE_CHANGE_READY_TO_NULL:
-        break;
-    }
-    return ret;
-
-}
-
-static gboolean gst_ndi_video_src_query(GstBaseSrc* bsrc, GstQuery* query) {
-    GstNdiVideoSrc* self = GST_NDI_VIDEO_SRC(bsrc);
-    gboolean res = FALSE;
-
-    switch (GST_QUERY_TYPE(query)) {
-    case GST_QUERY_CAPS: {
-        GstCaps* filter = NULL;
-        gst_query_parse_caps(query, &filter);
-
-        if (self->pNDI_recv != NULL) {
-            NDIlib_video_frame_v2_t video_frame = gst_ndi_util_get_video_frame(self->pNDI_recv, 5000);
-            if (video_frame.xres > 0 && video_frame.yres > 0) {
-                GstCaps* caps = gst_util_create_video_caps(&video_frame);
-                NDIlib_recv_free_video_v2(self->pNDI_recv, &video_frame);
-                gst_query_set_caps_result(query, caps);
-                gst_caps_unref(caps);
-            }
-        }
-    }
-        /* break;
-    case GST_QUERY_CONVERT:
-    {
-        break;
-    }
-    case GST_QUERY_LATENCY:
-    {
-        break;
-    }
-    case GST_QUERY_DURATION: {
-    }*/
-    default:
-        res = GST_BASE_SRC_CLASS(parent_class)->query(bsrc, query);
-        break;
-    }
-    return res;
-}

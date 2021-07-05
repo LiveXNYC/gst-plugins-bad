@@ -108,12 +108,9 @@ gst_ndi_device_provider_probe(GstDeviceProvider* provider) {
         const NDIlib_source_t* p_sources = NDIlib_find_get_current_sources(pNDI_find, &no_sources);
         g_mutex_unlock(&self->list_lock);
 
-        NDIlib_recv_instance_t pNDI_recv = NULL;
-        //pNDI_recv = NDIlib_recv_create_v3(NULL);
-
         // Display all the sources.
         for (uint32_t i = 0; i < no_sources; i++) {
-            GST_INFO("%u. %s\n", i + 1, p_sources[i].p_ndi_name);
+            GST_DEBUG("%u. %s\n", i + 1, p_sources[i].p_ndi_name);
 
             /* Set some useful properties */
             GstStructure* props = gst_structure_new("ndi-proplist",
@@ -121,11 +118,7 @@ gst_ndi_device_provider_probe(GstDeviceProvider* provider) {
                 "device.strid", G_TYPE_STRING, GST_STR_NULL(p_sources[i].p_url_address),
                 "device.friendlyName", G_TYPE_STRING, p_sources[i].p_ndi_name, NULL);
 
-            GST_INFO("caps\n");
-            GstCaps* caps = gst_ndi_device_provider_get_caps_from_device(pNDI_recv, p_sources + i);
-            if (caps == NULL) {
-                caps = gst_util_create_default_videro_caps();
-            }
+            GstCaps* caps = gst_util_create_default_videro_caps();
 
             GstDevice* device = g_object_new(GST_TYPE_NDI_DEVICE, "device", p_sources[i].p_url_address,
                 "display-name", p_sources[i].p_ndi_name,
@@ -133,14 +126,12 @@ gst_ndi_device_provider_probe(GstDeviceProvider* provider) {
                 "device-class", "Video/Source",
                 "properties", props,
                 NULL);
-
-            list = g_list_append(list, device);
-
             gst_structure_free(props);
-
             if (caps) {
                 gst_caps_unref(caps);
             }
+
+            list = g_list_append(list, device);
         }
     }
 
