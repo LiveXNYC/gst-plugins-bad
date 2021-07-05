@@ -24,7 +24,7 @@ gst_ndi_device_provider_class_init(GstNdiDeviceProviderClass* klass)
     GObjectClass* gobject_class = G_OBJECT_CLASS(klass);
 
     provider_class->probe = GST_DEBUG_FUNCPTR(gst_ndi_device_provider_probe);
-    gobject_class ->finalize = gst_ndi_device_provider_finalize;
+    gobject_class->finalize = gst_ndi_device_provider_finalize;
     gobject_class->dispose = gst_ndi_device_provider_finalize;
 
     gst_device_provider_class_set_static_metadata(provider_class,
@@ -96,6 +96,31 @@ gst_ndi_device_provider_finalize(GObject* object) {
     NDIlib_find_destroy(pNDI_find);
 }
 
+static GstDevice*
+gst_ndi_device_provider_create_device(const char* id, const char* name, gboolean isVideo) {
+    GstStructure* props = gst_structure_new("ndi-proplist",
+        "device.api", G_TYPE_STRING, "NDI",
+        "device.strid", G_TYPE_STRING, GST_STR_NULL(id),
+        "device.friendlyName", G_TYPE_STRING, name, NULL);
+
+    GstCaps* caps = isVideo 
+        ? gst_util_create_default_video_caps() 
+        : gst_util_create_default_audio_caps();
+    GstDevice* device = g_object_new(GST_TYPE_NDI_DEVICE, "device", id,
+        "display-name", name,
+        "caps", caps,
+        "device-class", isVideo ? "Video/Source" : "Audio/Source",
+        "properties", props,
+        NULL);
+    GST_NDI_DEVICE(device)->isVideo = isVideo;
+    if (caps) {
+        gst_caps_unref(caps);
+    }
+    gst_structure_free(props);
+
+    return device;
+}
+
 static GList*
 gst_ndi_device_provider_probe(GstDeviceProvider* provider) {
     GstNdiDeviceProvider* self = GST_NDI_DEVICE_PROVIDER(provider);
@@ -112,25 +137,10 @@ gst_ndi_device_provider_probe(GstDeviceProvider* provider) {
         for (uint32_t i = 0; i < no_sources; i++) {
             GST_DEBUG("%u. %s\n", i + 1, p_sources[i].p_ndi_name);
 
-            /* Set some useful properties */
-            GstStructure* props = gst_structure_new("ndi-proplist",
-                "device.api", G_TYPE_STRING, "NDI",
-                "device.strid", G_TYPE_STRING, GST_STR_NULL(p_sources[i].p_url_address),
-                "device.friendlyName", G_TYPE_STRING, p_sources[i].p_ndi_name, NULL);
+            GstDevice* device = gst_ndi_device_provider_create_device(p_sources[i].p_url_address, p_sources[i].p_ndi_name, TRUE);
+            list = g_list_append(list, device);
 
-            GstCaps* caps = gst_util_create_default_videro_caps();
-
-            GstDevice* device = g_object_new(GST_TYPE_NDI_DEVICE, "device", p_sources[i].p_url_address,
-                "display-name", p_sources[i].p_ndi_name,
-                "caps", caps,
-                "device-class", "Video/Source",
-                "properties", props,
-                NULL);
-            gst_structure_free(props);
-            if (caps) {
-                gst_caps_unref(caps);
-            }
-
+            device = gst_ndi_device_provider_create_device(p_sources[i].p_url_address, p_sources[i].p_ndi_name, FALSE);
             list = g_list_append(list, device);
         }
     }

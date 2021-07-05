@@ -6,6 +6,7 @@
 #include "gstndidevice.h"
 #include "gstndideviceprovider.h"
 #include "gstndivideosrc.h"
+#include "gstndiaudiosrc.h"
 
 GST_DEBUG_CATEGORY(gst_ndi_debug);
 GST_DEBUG_CATEGORY(gst_ndi_source_object_debug);
@@ -35,12 +36,11 @@ plugin_init(GstPlugin* plugin)
     GST_DEBUG_CATEGORY_INIT(gst_ndi_source_object_debug,
         "ndisourceobject", 0, "ndisourceobject");
 
-    gst_element_register(plugin, "ndivideosrc", GST_RANK_NONE,
-        GST_TYPE_NDI_VIDEO_SRC);
+    gst_element_register(plugin, "ndivideosrc", GST_RANK_NONE, GST_TYPE_NDI_VIDEO_SRC);
+    gst_element_register(plugin, "ndiaudiosrc", GST_RANK_NONE, GST_TYPE_NDI_AUDIO_SRC);
 
     //gst_element_register(plugin, "ndivideosrc", rank, GST_TYPE_NDI_VIDEO_SRC);
-    gst_device_provider_register(plugin, "ndideviceprovider",
-        rank, GST_TYPE_NDI_DEVICE_PROVIDER);
+    gst_device_provider_register(plugin, "ndideviceprovider", rank, GST_TYPE_NDI_DEVICE_PROVIDER);
 
     /* So that call MFShutdown() when this plugin is no more used
      * (i.e., gst_deinit). Otherwise valgrind-like tools would complain

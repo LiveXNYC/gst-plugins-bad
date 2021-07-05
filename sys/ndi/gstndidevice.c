@@ -40,8 +40,6 @@ gst_ndi_device_class_init(GstNdiDeviceClass* klass)
         g_param_spec_string("device", "Device string ID",
             "Device strId", NULL,
             (GParamFlags)(G_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY | G_PARAM_STATIC_STRINGS)));
-    
-    GST_INFO("gst_ndi_device_class_init exit\n");
 }
 
 static void
@@ -66,11 +64,18 @@ static GstElement*
 gst_ndi_device_create_element(GstDevice* device, const gchar* name)
 {
     GstNdiDevice* self = GST_NDI_DEVICE(device);
-    GstElement* elem;
+    GstElement* elem = NULL;
 
-    elem = gst_element_factory_make("ndivideosrc", name);
+    if (self->isVideo) {
+        elem = gst_element_factory_make("ndivideosrc", name);
+    }
+    else {
+        elem = gst_element_factory_make("ndiaudiosrc", name);
+    }
 
-    g_object_set(elem, "device-path", self->device_path, NULL);
+    if (elem) {
+        g_object_set(elem, "device-path", self->device_path, NULL);
+    }
 
     return elem;
 }

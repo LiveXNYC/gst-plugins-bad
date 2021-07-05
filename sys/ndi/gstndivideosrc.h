@@ -23,7 +23,6 @@ struct _GstNdiVideoSrc
     GstPushSrc parent;
     gchar* device_path;
     gchar* device_name;
-    gint device_index;
     NDIlib_recv_instance_t pNDI_recv;
     int xres, yres;
     int frame_rate_N, frame_rate_D;

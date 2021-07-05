@@ -83,6 +83,11 @@ GstCaps* gst_util_create_video_caps(const NDIlib_video_frame_v2_t* frame) {
     return caps;
 }
 
-GstCaps* gst_util_create_default_videro_caps() {
+GstCaps* gst_util_create_default_video_caps() {
     return gst_caps_new_any();
+}
+
+GstCaps* gst_util_create_default_audio_caps() {
+    return gst_caps_from_string("audio/x-raw, format=F32LE, channels=[1, 16], rate={44100, 48000, 96000}, "
+        "layout=interleaved");
 }

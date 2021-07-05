@@ -20,6 +20,7 @@ struct _GstNdiDevice
 {
     GstDevice parent;
     gchar* device_path;
+    gboolean isVideo;
 };
 
 
