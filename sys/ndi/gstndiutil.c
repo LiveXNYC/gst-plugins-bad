@@ -71,6 +71,17 @@ NDIlib_video_frame_v2_t gst_ndi_util_get_video_frame(NDIlib_recv_instance_t inst
     return video_frame;
 }
 
+NDIlib_audio_frame_v2_t gst_ndi_util_get_audio_frame(NDIlib_recv_instance_t instance, gint timeout) {
+    NDIlib_audio_frame_v2_t audio_frame;
+    audio_frame.sample_rate = 0;
+    NDIlib_frame_type_e res = NDIlib_frame_type_none;
+    do {
+        res = NDIlib_recv_capture_v2(instance, NULL, &audio_frame, NULL, timeout);
+    } while (res != NDIlib_frame_type_audio && res != NDIlib_frame_type_none);
+
+    return audio_frame;
+}
+
 GstCaps* gst_util_create_video_caps(const NDIlib_video_frame_v2_t* frame) {
     GstCaps* caps = gst_caps_new_simple("video/x-raw",
         "format", G_TYPE_STRING, gst_ndi_util_get_format(frame->FourCC),
@@ -83,11 +94,22 @@ GstCaps* gst_util_create_video_caps(const NDIlib_video_frame_v2_t* frame) {
     return caps;
 }
 
+GstCaps* gst_util_create_audio_caps(const NDIlib_audio_frame_v2_t* frame) {
+    GstCaps* caps = gst_caps_new_simple("video/x-raw",
+        "format", G_TYPE_STRING, "F32LE",
+        "channels", G_TYPE_INT, (int)frame->no_channels,
+        "rate", G_TYPE_INT, (int)frame->sample_rate,
+        NULL);
+
+    return caps;
+
+}
+
 GstCaps* gst_util_create_default_video_caps() {
     return gst_caps_new_any();
 }
 
 GstCaps* gst_util_create_default_audio_caps() {
-    return gst_caps_from_string("audio/x-raw, format=F32LE, channels=[1, 16], rate={44100, 48000, 96000}, "
-        "layout=interleaved");
+    return gst_caps_from_string("audio/x-raw, format=F32LE, channels=2, rate=48000");
+    //return gst_caps_from_string("audio/x-raw, format=F32LE, channels=[1, 16], rate={44100, 48000, 96000}, layout=interleaved");
 }

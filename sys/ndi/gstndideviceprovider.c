@@ -29,7 +29,7 @@ gst_ndi_device_provider_class_init(GstNdiDeviceProviderClass* klass)
 
     gst_device_provider_class_set_static_metadata(provider_class,
         "NDI Device Provider",
-        "Source/Video", "List NDI source devices",
+        "Source/Video/Audio", "List NDI source devices",
         "teaminua.com");
 }
 
@@ -106,6 +106,7 @@ gst_ndi_device_provider_create_device(const char* id, const char* name, gboolean
     GstCaps* caps = isVideo 
         ? gst_util_create_default_video_caps() 
         : gst_util_create_default_audio_caps();
+
     GstDevice* device = g_object_new(GST_TYPE_NDI_DEVICE, "device", id,
         "display-name", name,
         "caps", caps,
