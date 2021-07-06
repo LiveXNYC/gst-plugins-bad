@@ -5,7 +5,7 @@
 #include <gst/base/base.h>
 #include <gst/audio/audio.h>
 
-#include <Processing.NDI.Lib.h>
+#include <ndi/Processing.NDI.Lib.h>
 
 G_BEGIN_DECLS
 

@@ -5,7 +5,7 @@
 #include <gst/video/video.h>
 #include <gst/base/gstpushsrc.h>
 
-#include <Processing.NDI.Lib.h>
+#include <ndi/Processing.NDI.Lib.h>
 
 G_BEGIN_DECLS
 #define GST_TYPE_NDI_VIDEO_SRC gst_ndi_video_src_get_type()

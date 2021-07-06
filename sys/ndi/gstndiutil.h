@@ -2,7 +2,7 @@
 #define __GST_NDI_UTIL_H__
 
 #include <gst/gst.h>
-#include <Processing.NDI.Lib.h>
+#include <ndi/Processing.NDI.Lib.h>
 
 G_BEGIN_DECLS
 
