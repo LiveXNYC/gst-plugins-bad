@@ -359,7 +359,7 @@ gst_ndi_video_src_create (GstPushSrc * pushsrc, GstBuffer ** buffer)
       NDIlib_frame_type_e res = NDIlib_frame_type_none;
       do {
           res = NDIlib_recv_capture_v2(self->pNDI_recv, video_frame, NULL, NULL, 5000);
-      } while (res != NDIlib_frame_type_video && res != NDIlib_frame_type_none);
+      } while (res != NDIlib_frame_type_video && res != NDIlib_frame_type_none && res != NDIlib_frame_type_error);
 
       if (res == NDIlib_frame_type_video) {
           /*if (video_frame->xres != self->xres

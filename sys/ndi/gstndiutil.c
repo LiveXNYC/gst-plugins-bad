@@ -66,7 +66,7 @@ NDIlib_video_frame_v2_t gst_ndi_util_get_video_frame(NDIlib_recv_instance_t inst
     NDIlib_frame_type_e res = NDIlib_frame_type_none;
     do {
         res = NDIlib_recv_capture_v2(instance, &video_frame, NULL, NULL, timeout);
-    } while (res != NDIlib_frame_type_video && res != NDIlib_frame_type_none);
+    } while (res != NDIlib_frame_type_video && res != NDIlib_frame_type_none && res != NDIlib_frame_type_error);
 
     return video_frame;
 }
@@ -77,7 +77,7 @@ NDIlib_audio_frame_v2_t gst_ndi_util_get_audio_frame(NDIlib_recv_instance_t inst
     NDIlib_frame_type_e res = NDIlib_frame_type_none;
     do {
         res = NDIlib_recv_capture_v2(instance, NULL, &audio_frame, NULL, timeout);
-    } while (res != NDIlib_frame_type_audio && res != NDIlib_frame_type_none);
+    } while (res != NDIlib_frame_type_audio && res != NDIlib_frame_type_none && res != NDIlib_frame_type_error);
 
     return audio_frame;
 }
