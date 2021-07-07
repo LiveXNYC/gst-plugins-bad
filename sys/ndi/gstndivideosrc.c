@@ -91,8 +91,8 @@ gst_ndi_video_src_class_init (GstNdiVideoSrcClass * klass)
   basesrc_class->unlock = GST_DEBUG_FUNCPTR (gst_ndi_video_src_unlock);
   basesrc_class->unlock_stop = GST_DEBUG_FUNCPTR (gst_ndi_video_src_unlock_stop);
 
-  pushsrc_class->create = GST_DEBUG_FUNCPTR (gst_ndi_video_src_create);
-  //pushsrc_class->fill = GST_DEBUG_FUNCPTR(gst_ndi_video_src_fill);
+  //pushsrc_class->create = GST_DEBUG_FUNCPTR (gst_ndi_video_src_create);
+  pushsrc_class->fill = GST_DEBUG_FUNCPTR(gst_ndi_video_src_fill);
 
   GST_DEBUG_CATEGORY_INIT (gst_ndi_video_src_debug, "ndivideosrc", 0,
       "ndivideosrc");

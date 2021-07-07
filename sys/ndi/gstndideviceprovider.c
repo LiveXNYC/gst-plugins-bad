@@ -6,7 +6,7 @@
 #include "gstndidevice.h"
 #include "gstndiutil.h"
 
-#include <Processing.NDI.Lib.h>
+#include <ndi/Processing.NDI.Lib.h>
 
 G_DEFINE_TYPE(GstNdiDeviceProvider, gst_ndi_device_provider,
     GST_TYPE_DEVICE_PROVIDER);

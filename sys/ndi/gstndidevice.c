@@ -3,7 +3,7 @@
 #endif
 
 #include "gstndidevice.h"
-#include <Processing.NDI.Lib.h>
+#include <ndi/Processing.NDI.Lib.h>
 
 GST_DEBUG_CATEGORY_EXTERN(gst_ndi_debug);
 #define GST_CAT_DEFAULT gst_ndi_debug
