@@ -18,7 +18,10 @@ if host_system == 'windows'
     ndi_libs = [ndi_dep]
   endif
 endif
-
+if ['darwin', 'ios'].contains(host_system)
+    ndi_dep = dependency('ndi', version : '>=1.3.0', required : true)
+    ndi_libs = [ndi_dep]
+endif
 message('Building ndi plugin')
 gstndi = library('gstndi',
     ndi_sources,
