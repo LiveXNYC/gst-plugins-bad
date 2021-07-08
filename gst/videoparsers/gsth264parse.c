@@ -1067,7 +1067,7 @@ gst_h264_parse_process_nal (GstH264Parse * h264parse, GstH264NalUnit * nalu)
               GST_H264_PARSE_STATE_VALID_PICTURE_HEADERS))
         return FALSE;
           
-      if (h264parse->sei_pos < 0) {
+      if (h264parse->sei_pos < 0 && h264parse->update_timecode) {
          h264parse->force_pic_timing_sei_pos = nalu->sc_offset;
       }
 
@@ -1157,7 +1157,9 @@ gst_h264_parse_process_nal (GstH264Parse * h264parse, GstH264NalUnit * nalu)
         return FALSE;
       h264parse->aud_needed = FALSE;
 
-      h264parse->force_pic_timing_sei_pos = nalu->sc_offset + (nalu->size + (nalu->offset - nalu->sc_offset)) - 1;
+      if (h264parse->update_timecode) {
+        h264parse->force_pic_timing_sei_pos = nalu->sc_offset + (nalu->size + (nalu->offset - nalu->sc_offset)) - 1;
+      }
       break;
     default:
       /* drop anything before the initial SPS */
