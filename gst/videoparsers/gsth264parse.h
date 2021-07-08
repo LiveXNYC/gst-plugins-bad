@@ -133,6 +133,9 @@ struct _GstH264Parse
   gboolean bidirectional;
   gboolean header;
   gboolean frame_start;
+  guint8 cpb_removal_delay_length_minus1;
+  guint8 dpb_output_delay_length_minus1;
+  guint8 time_offset_length;
   /* AU state */
   gboolean picture_start;
 

@@ -201,6 +201,9 @@ gst_h264_parse_init (GstH264Parse * h264parse)
   h264parse->aud_needed = TRUE;
   h264parse->aud_insert = TRUE;
   h264parse->update_timecode = FALSE;
+  h264parse->cpb_removal_delay_length_minus1 = 0;
+  h264parse->dpb_output_delay_length_minus1 = 0;
+  h264parse->time_offset_length = 24;
 }
 
 static void
@@ -967,6 +970,14 @@ gst_h264_parse_process_nal (GstH264Parse * h264parse, GstH264NalUnit * nalu)
         return FALSE;
       }
       
+      if (sps.vui_parameters_present_flag) {
+         if (sps.vui_parameters.nal_hrd_parameters_present_flag) {
+            h264parse->cpb_removal_delay_length_minus1 = sps.vui_parameters.nal_hrd_parameters.cpb_removal_delay_length_minus1;
+            h264parse->dpb_output_delay_length_minus1 = sps.vui_parameters.nal_hrd_parameters.dpb_output_delay_length_minus1;
+            h264parse->time_offset_length = sps.vui_parameters.nal_hrd_parameters.time_offset_length;
+         }
+      }
+          
       h264parse->pic_struct_present_flag_position = gst_h264_parser_find_sps(nalu);
       if (h264parse->pic_struct_present_flag_position > 0) {
           h264parse->pic_struct_present_flag_position += (nalu->offset + nalu->header_bytes) * 8;
@@ -1055,6 +1066,10 @@ gst_h264_parse_process_nal (GstH264Parse * h264parse, GstH264NalUnit * nalu)
       if (!GST_H264_PARSE_STATE_VALID (h264parse,
               GST_H264_PARSE_STATE_VALID_PICTURE_HEADERS))
         return FALSE;
+          
+      if (h264parse->sei_pos < 0) {
+         h264parse->force_pic_timing_sei_pos = nalu->sc_offset;
+      }
 
       /* This is similar to the GOT_SLICE state, but is only reset when the
        * AU is complete. This is used to keep track of AU */
@@ -2867,8 +2882,11 @@ gst_h264_parse_create_sei_memory(GstH264Parse* h264parse,
 
     pic_timing = &sei.payload.pic_timing;
     pic_timing->pic_struct_present_flag = TRUE;
-    pic_timing->time_offset_length = 24;
-
+    pic_timing->time_offset_length = h264parse->time_offset_length;
+    pic_timing->CpbDpbDelaysPresentFlag = h264parse->cpb_removal_delay_length_minus1 > 0;
+    pic_timing->cpb_removal_delay_length_minus1 = h264parse->cpb_removal_delay_length_minus1;
+    pic_timing->dpb_output_delay_length_minus1 = h264parse->dpb_output_delay_length_minus1;
+    
     switch (h264parse->sei_pic_struct) {
     case GST_H264_SEI_PIC_STRUCT_FRAME:
     case GST_H264_SEI_PIC_STRUCT_FRAME_DOUBLING:
@@ -3014,7 +3032,8 @@ gst_h264_parse_force_create_pic_timing_sei(GstH264Parse* h264parse,
 
     if (!h264parse->update_timecode
         || !GST_H264_PARSE_STATE_VALID(h264parse,
-            GST_H264_PARSE_STATE_VALID_PICTURE_HEADERS))
+            GST_H264_PARSE_STATE_VALID_PICTURE_HEADERS)
+        || h264parse->force_pic_timing_sei_pos < 0)
         return NULL;
 
     sei_mem = gst_h264_parse_create_sei_memory(h264parse, buffer);
@@ -3126,7 +3145,9 @@ gst_h264_parse_pre_push_frame (GstBaseParse * parse, GstBaseParseFrame * frame)
       gst_buffer_prepend_memory (frame->out_buffer, mem);
       if (h264parse->idr_pos >= 0)
         h264parse->idr_pos += sizeof (au_delim);
-
+      if (h264parse->force_pic_timing_sei_pos >= 0) {
+        h264parse->force_pic_timing_sei_pos += sizeof (au_delim);
+      }
       buffer = frame->out_buffer;
     } else {
       GstBuffer *aud_buffer = gst_buffer_new_allocate (NULL, 2, NULL);
