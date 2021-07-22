@@ -903,6 +903,8 @@ gst_h265_parse_process_nal (GstH265Parse * h265parse, GstH265NalUnit * nalu)
         h265parse->state |= GST_H265_PARSE_STATE_GOT_SLICE;
 
         h265parse->force_time_code_sei_pos = nalu->sc_offset;
+        if (h265parse->update_timecode && h265parse->sei_pos == -1)
+            h265parse->sei_pos = nalu->sc_offset;
       }
       if (slice.first_slice_segment_in_pic_flag == 1)
         GST_DEBUG_OBJECT (h265parse,
@@ -2721,8 +2723,7 @@ gst_h265_parse_create_time_code_sei(GstH265Parse* h265parse, GstBuffer* buffer) 
         h265parse->force_time_code_sei_pos + 1, -1);
 
     if (h265parse->idr_pos >= 0) {
-        h265parse->idr_pos = h265parse->force_time_code_sei_pos + mem_size;
-        h265parse->idr_pos -= 6; // SEI message size
+        h265parse->idr_pos += mem_size;
     }
     return out_buf;
 }
