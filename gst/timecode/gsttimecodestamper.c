@@ -1158,7 +1158,10 @@ gst_timecodestamper_transform_ip (GstBaseTransform * vfilter,
     clock_time_now = GST_CLOCK_TIME_NONE;
   }
 
-  dt_now = g_date_time_new_now_local ();
+  //dt_now = g_date_time_new_now_local ();
+  GTimeZone* tz = g_time_zone_new("Z");
+  dt_now = g_date_time_new_now(tz);
+  g_time_zone_unref(tz);
 
   running_time =
       gst_segment_to_running_time (&vfilter->segment, GST_FORMAT_TIME,
@@ -1289,72 +1292,6 @@ gst_timecodestamper_transform_ip (GstBaseTransform * vfilter,
     }
   }
 
-  /* Update RTC-based timecode */
-  {
-    GstVideoTimeCode rtc_timecode_now;
-    gchar *tc_str, *dt_str;
-
-    /* Create timecode for the current frame time */
-    memset (&rtc_timecode_now, 0, sizeof (rtc_timecode_now));
-    gst_video_time_code_init_from_date_time_full (&rtc_timecode_now,
-        timecodestamper->vinfo.fps_n, timecodestamper->vinfo.fps_d, dt_frame,
-        tc_flags, 0);
-
-    tc_str = gst_video_time_code_to_string (&rtc_timecode_now);
-    dt_str = g_date_time_format (dt_frame, "%F %R %z");
-    GST_DEBUG_OBJECT (timecodestamper,
-        "Created RTC timecode %s for %s (%06u us)", tc_str, dt_str,
-        g_date_time_get_microsecond (dt_frame));
-    g_free (dt_str);
-    g_free (tc_str);
-
-    /* If we don't have an RTC timecode yet, directly initialize with this one */
-    if (!timecodestamper->rtc_tc) {
-      timecodestamper->rtc_tc = gst_video_time_code_copy (&rtc_timecode_now);
-      tc_str = gst_video_time_code_to_string (timecodestamper->rtc_tc);
-      GST_DEBUG_OBJECT (timecodestamper, "Initialized RTC timecode to %s",
-          tc_str);
-      g_free (tc_str);
-    } else {
-      GstClockTime rtc_now_time, rtc_tc_time;
-      GstClockTime rtc_diff;
-
-      /* Increment the old RTC timecode to this frame */
-      gst_video_time_code_increment_frame (timecodestamper->rtc_tc);
-
-      /* Otherwise check if we drifted too much and need to resync */
-      rtc_tc_time =
-          gst_video_time_code_nsec_since_daily_jam (timecodestamper->rtc_tc);
-      rtc_now_time =
-          gst_video_time_code_nsec_since_daily_jam (&rtc_timecode_now);
-      if (rtc_tc_time > rtc_now_time)
-        rtc_diff = rtc_tc_time - rtc_now_time;
-      else
-        rtc_diff = rtc_now_time - rtc_tc_time;
-
-      if (timecodestamper->rtc_auto_resync
-          && timecodestamper->rtc_max_drift != GST_CLOCK_TIME_NONE
-          && rtc_diff > timecodestamper->rtc_max_drift) {
-        gst_video_time_code_free (timecodestamper->rtc_tc);
-        timecodestamper->rtc_tc = gst_video_time_code_copy (&rtc_timecode_now);
-        tc_str = gst_video_time_code_to_string (timecodestamper->rtc_tc);
-        GST_DEBUG_OBJECT (timecodestamper,
-            "Updated RTC timecode to %s (%s%" GST_TIME_FORMAT " drift)", tc_str,
-            (rtc_tc_time > rtc_now_time ? "-" : "+"), GST_TIME_ARGS (rtc_diff));
-        g_free (tc_str);
-      } else {
-        /* Else nothing to do here, we use the current one */
-        tc_str = gst_video_time_code_to_string (timecodestamper->rtc_tc);
-        GST_DEBUG_OBJECT (timecodestamper,
-            "Incremented RTC timecode to %s (%s%" GST_TIME_FORMAT " drift)",
-            tc_str, (rtc_tc_time > rtc_now_time ? "-" : "+"),
-            GST_TIME_ARGS (rtc_diff));
-        g_free (tc_str);
-      }
-    }
-
-    gst_video_time_code_clear (&rtc_timecode_now);
-  }
   GST_OBJECT_UNLOCK (timecodestamper);
 
   /* Update LTC-based timecode as needed */
@@ -1589,6 +1526,74 @@ gst_timecodestamper_transform_ip (GstBaseTransform * vfilter,
       }
       break;
     case GST_TIME_CODE_STAMPER_SOURCE_RTC:
+        /* Update RTC-based timecode */
+    {
+        GstVideoTimeCode rtc_timecode_now;
+        gchar* tc_str, * dt_str;
+
+        /* Create timecode for the current frame time */
+        memset(&rtc_timecode_now, 0, sizeof(rtc_timecode_now));
+        gst_video_time_code_init_from_date_time_full(&rtc_timecode_now,
+            timecodestamper->vinfo.fps_n, timecodestamper->vinfo.fps_d, dt_frame,
+            tc_flags, 0);
+
+        tc_str = gst_video_time_code_to_string(&rtc_timecode_now);
+        dt_str = g_date_time_format(dt_frame, "%F %R %z");
+        GST_DEBUG_OBJECT(timecodestamper,
+            "Created RTC timecode %s for %s (%06u us)", tc_str, dt_str,
+            g_date_time_get_microsecond(dt_frame));
+        g_free(dt_str);
+        g_free(tc_str);
+
+        /* If we don't have an RTC timecode yet, directly initialize with this one */
+        if (!timecodestamper->rtc_tc) {
+            timecodestamper->rtc_tc = gst_video_time_code_copy(&rtc_timecode_now);
+            tc_str = gst_video_time_code_to_string(timecodestamper->rtc_tc);
+            GST_DEBUG_OBJECT(timecodestamper, "Initialized RTC timecode to %s",
+                tc_str);
+            g_free(tc_str);
+        }
+        else {
+            GstClockTime rtc_now_time, rtc_tc_time;
+            GstClockTime rtc_diff;
+
+            /* Increment the old RTC timecode to this frame */
+            gst_video_time_code_increment_frame(timecodestamper->rtc_tc);
+
+            /* Otherwise check if we drifted too much and need to resync */
+            rtc_tc_time =
+                gst_video_time_code_nsec_since_daily_jam(timecodestamper->rtc_tc);
+            rtc_now_time =
+                gst_video_time_code_nsec_since_daily_jam(&rtc_timecode_now);
+            if (rtc_tc_time > rtc_now_time)
+                rtc_diff = rtc_tc_time - rtc_now_time;
+            else
+                rtc_diff = rtc_now_time - rtc_tc_time;
+
+            if (timecodestamper->rtc_auto_resync
+                && timecodestamper->rtc_max_drift != GST_CLOCK_TIME_NONE
+                && rtc_diff > timecodestamper->rtc_max_drift) {
+                gst_video_time_code_free(timecodestamper->rtc_tc);
+                timecodestamper->rtc_tc = gst_video_time_code_copy(&rtc_timecode_now);
+                tc_str = gst_video_time_code_to_string(timecodestamper->rtc_tc);
+                GST_DEBUG_OBJECT(timecodestamper,
+                    "Updated RTC timecode to %s (%s%" GST_TIME_FORMAT " drift)", tc_str,
+                    (rtc_tc_time > rtc_now_time ? "-" : "+"), GST_TIME_ARGS(rtc_diff));
+                g_free(tc_str);
+            }
+            else {
+                /* Else nothing to do here, we use the current one */
+                tc_str = gst_video_time_code_to_string(timecodestamper->rtc_tc);
+                GST_DEBUG_OBJECT(timecodestamper,
+                    "Incremented RTC timecode to %s (%s%" GST_TIME_FORMAT " drift)",
+                    tc_str, (rtc_tc_time > rtc_now_time ? "-" : "+"),
+                    GST_TIME_ARGS(rtc_diff));
+                g_free(tc_str);
+            }
+    }
+        gst_video_time_code_clear(&rtc_timecode_now);
+  }
+
       tc = timecodestamper->rtc_tc;
       break;
     case GST_TIME_CODE_STAMPER_SOURCE_CLOCK:
