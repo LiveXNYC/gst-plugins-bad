@@ -3,6 +3,7 @@
 #endif
 
 #include "gstndiaudiosrc.h"
+#include "gstndiutil.h"
 
 GST_DEBUG_CATEGORY_STATIC(gst_ndi_audio_src_debug);
 #define GST_CAT_DEFAULT gst_ndi_audio_src_debug
@@ -13,16 +14,17 @@ enum
     PROP_DEVICE_PATH,
 };
 
-static GstStaticPadTemplate sink_template = GST_STATIC_PAD_TEMPLATE("src",
+static GstStaticPadTemplate src_template = GST_STATIC_PAD_TEMPLATE("src",
     GST_PAD_SRC,
     GST_PAD_ALWAYS,
     GST_STATIC_CAPS
     ("audio/x-raw, format=F32LE, channels=[1, 16], rate={44100, 48000, 96000}, "
-        "layout=interleaved;")
+        "layout=interleaved")
 );
 
-#define parent_class gst_ndi_audio_src_parent_class
-G_DEFINE_TYPE(GstNdiAudioSrc, gst_ndi_audio_src, GST_TYPE_PUSH_SRC);
+#define gst_ndi_audio_src_parent_class parent_class
+G_DEFINE_TYPE(GstNdiAudioSrc, gst_ndi_audio_src, GST_TYPE_AUDIO_SRC);
+//G_DEFINE_TYPE(GstNdiAudioSrc, gst_ndi_audio_src, GST_TYPE_PUSH_SRC);
 
 static void gst_ndi_audio_src_set_property(GObject* object,
     guint property_id, const GValue* value, GParamSpec* pspec);
@@ -30,34 +32,62 @@ static void gst_ndi_audio_src_get_property(GObject* object,
     guint property_id, GValue* value, GParamSpec* pspec);
 static void gst_ndi_audio_src_finalize(GObject* object);
 
+static gboolean gst_ndi_audio_src_start(GstBaseSrc* src);
+static gboolean gst_ndi_audio_src_stop(GstBaseSrc* src);
+static gboolean gst_ndi_audio_src_set_caps(GstBaseSrc* src, GstCaps* caps);
+static GstCaps* gst_ndi_audio_src_get_caps(GstBaseSrc* src, GstCaps* filter);
+
+
+static gboolean gst_ndi_audio_src_open(GstAudioSrc* asrc);
+static gboolean gst_ndi_audio_src_close(GstAudioSrc* asrc);
+static gboolean gst_ndi_audio_src_prepare(GstAudioSrc* asrc, GstAudioRingBufferSpec* spec);
+static gboolean gst_ndi_audio_src_unprepare(GstAudioSrc* asrc);
+static guint gst_ndi_audio_src_read(GstAudioSrc* asrc, gpointer data, guint length, GstClockTime* timestamp);
+static guint gst_ndi_audio_src_delay(GstAudioSrc* asrc);
+static void gst_ndi_audio_src_reset(GstAudioSrc* asrc);
+
+static GstFlowReturn gst_ndi_audio_src_create(GstPushSrc* pushsrc,
+    GstBuffer** buffer);
+
+
 static void
 gst_ndi_audio_src_class_init(GstNdiAudioSrcClass* klass)
 {
     GObjectClass* gobject_class = G_OBJECT_CLASS(klass);
     GstElementClass* element_class = GST_ELEMENT_CLASS(klass);
     GstBaseSrcClass* basesrc_class = GST_BASE_SRC_CLASS(klass);
-    GstPushSrcClass* pushsrc_class = GST_PUSH_SRC_CLASS(klass);
+    GstAudioSrcClass* gstaudiosrc_class = GST_AUDIO_SRC_CLASS(klass);
 
     gobject_class->set_property = gst_ndi_audio_src_set_property;
     gobject_class->get_property = gst_ndi_audio_src_get_property;
     gobject_class->finalize = gst_ndi_audio_src_finalize;
 
     //element_class->change_state = GST_DEBUG_FUNCPTR(gst_ndi_audio_src_change_state);
+    //basesrc_class->start = GST_DEBUG_FUNCPTR(gst_ndi_audio_src_start);
+    //basesrc_class->stop = GST_DEBUG_FUNCPTR(gst_ndi_audio_src_stop);
+    //basesrc_class->set_caps = GST_DEBUG_FUNCPTR(gst_ndi_audio_src_set_caps);
+    basesrc_class->get_caps = GST_DEBUG_FUNCPTR(gst_ndi_audio_src_get_caps);
 
     //basesrc_class->query = GST_DEBUG_FUNCPTR(gst_ndi_audio_src_query);
-    basesrc_class->negotiate = NULL;
+    //basesrc_class->negotiate = NULL;
     //basesrc_class->unlock = GST_DEBUG_FUNCPTR(gst_ndi_audio_src_unlock);
     //basesrc_class->unlock_stop = GST_DEBUG_FUNCPTR(gst_ndi_audio_src_unlock_stop);
 
-    //pushsrc_class->create = GST_DEBUG_FUNCPTR(gst_ndi_audio_src_create);
-
+    gstaudiosrc_class->open = GST_DEBUG_FUNCPTR(gst_ndi_audio_src_open);
+    gstaudiosrc_class->close = GST_DEBUG_FUNCPTR(gst_ndi_audio_src_close);
+    gstaudiosrc_class->read = GST_DEBUG_FUNCPTR(gst_ndi_audio_src_read);
+    gstaudiosrc_class->prepare = GST_DEBUG_FUNCPTR(gst_ndi_audio_src_prepare);
+    gstaudiosrc_class->unprepare = GST_DEBUG_FUNCPTR(gst_ndi_audio_src_unprepare);
+    gstaudiosrc_class->delay = GST_DEBUG_FUNCPTR(gst_ndi_audio_src_delay);
+    gstaudiosrc_class->reset = GST_DEBUG_FUNCPTR(gst_ndi_audio_src_reset);
+    
     g_object_class_install_property(gobject_class, PROP_DEVICE_PATH,
         g_param_spec_string("device-path", "Device Path",
             "The device path", "",
             G_PARAM_READWRITE | GST_PARAM_MUTABLE_READY |
             G_PARAM_STATIC_STRINGS));
 
-    gst_element_class_add_static_pad_template(element_class, &sink_template);
+    gst_element_class_add_static_pad_template(element_class, &src_template);
 
     gst_element_class_set_static_metadata(element_class, "NDI Audio Source",
         "Audio/Source/Hardware", "Capture audio stream from NDI device",
@@ -74,6 +104,7 @@ gst_ndi_audio_src_init(GstNdiAudioSrc* self)
     gst_base_src_set_format(GST_BASE_SRC(self), GST_FORMAT_TIME);
     
     self->pNDI_recv = NULL;
+    self->adapter = gst_adapter_new();
 
     gst_pad_use_fixed_caps(GST_BASE_SRC_PAD(self));
 }
@@ -117,5 +148,264 @@ gst_ndi_audio_src_finalize(GObject* object)
 {
     GstNdiAudioSrc* self = GST_NDI_AUDIO_SRC_CAST(object);
 
+    g_object_unref(self->adapter);
+    self->adapter = NULL;
+
     G_OBJECT_CLASS(parent_class)->finalize(object);
+}
+
+
+static void
+gst_ndi_audio_src_send_caps_event(GstBaseSrc* src, const NDIlib_audio_frame_v2_t* frame) {
+    GstPad* srcpad = GST_BASE_SRC_PAD(src);
+    GstCaps* caps = gst_util_create_audio_caps(frame);
+    GstEvent* event = gst_pad_get_sticky_event(srcpad, GST_EVENT_CAPS, 0);
+    if (event) {
+        GstCaps* event_caps;
+        gst_event_parse_caps(event, &event_caps);
+        if (caps != event_caps) {
+            gst_event_unref(event);
+            event = gst_event_new_caps(caps);
+        }
+    }
+    else {
+        event = gst_event_new_caps(caps);
+    }
+    gst_pad_push_event(srcpad, event);
+    gst_caps_unref(caps);
+}
+
+static gboolean
+gst_ndi_audio_src_start(GstBaseSrc* src)
+{
+    GstNdiAudioSrc* self = GST_NDI_AUDIO_SRC(src);
+
+    GST_DEBUG_OBJECT(self, "\n\n\nSTART");
+
+    NDIlib_recv_create_v3_t create;
+    create.source_to_connect_to.p_url_address = self->device_path;
+    create.source_to_connect_to.p_ndi_name = "";
+    create.p_ndi_recv_name = NULL;
+
+    self->pNDI_recv = NDIlib_recv_create_v3(&create);
+
+    if (self->pNDI_recv != NULL) {
+        NDIlib_audio_frame_v2_t audio_frame = gst_ndi_util_get_audio_frame(self->pNDI_recv, 5000);
+        if (audio_frame.sample_rate > 0) {
+            gst_ndi_audio_src_send_caps_event(src, &audio_frame);
+            NDIlib_recv_free_audio_v2(self->pNDI_recv, &audio_frame);
+        }
+    }
+
+    return TRUE;
+}
+
+static gboolean
+gst_ndi_audio_src_stop(GstBaseSrc* src)
+{
+    GstNdiAudioSrc* self = GST_NDI_AUDIO_SRC(src);
+
+    if (self->pNDI_recv != NULL) {
+        NDIlib_recv_destroy(self->pNDI_recv);
+        self->pNDI_recv = NULL;
+    }
+
+    return TRUE;
+}
+
+static gboolean
+gst_ndi_audio_src_set_caps(GstBaseSrc* src, GstCaps* caps)
+{
+    GstNdiAudioSrc* self = GST_NDI_AUDIO_SRC(src);
+
+    GST_DEBUG_OBJECT(self, "Set caps %" GST_PTR_FORMAT, caps);
+
+    return TRUE;
+}
+
+static GstCaps*
+gst_ndi_audio_src_get_caps(GstBaseSrc* src, GstCaps* filter)
+{
+    GstNdiAudioSrc* self = GST_NDI_AUDIO_SRC(src);
+    GstCaps* caps = NULL;
+    GST_DEBUG_OBJECT(self, "gst_ndi_audio_src_get_caps");
+
+    if (self->pNDI_recv != NULL) {
+        NDIlib_audio_frame_v2_t audio_frame = gst_ndi_util_get_audio_frame(self->pNDI_recv, 5000);
+        if (audio_frame.sample_rate > 0) {
+            caps = gst_util_create_audio_caps(&audio_frame);
+            NDIlib_recv_free_audio_v2(self->pNDI_recv, &audio_frame);
+            GST_DEBUG_OBJECT(self, "Audio frame caps %" GST_PTR_FORMAT, caps);
+        }
+    }
+
+    if (!caps)
+        caps = gst_pad_get_pad_template_caps(GST_BASE_SRC_PAD(src));
+
+    if (filter) {
+        GstCaps* filtered =
+            gst_caps_intersect_full(filter, caps, GST_CAPS_INTERSECT_FIRST);
+        gst_caps_unref(caps);
+        caps = filtered;
+    }
+    
+    GST_DEBUG_OBJECT(self, "caps %" GST_PTR_FORMAT, caps);
+
+    return caps;
+}
+
+
+
+typedef struct
+{
+    NDIlib_recv_instance_t recv;
+    NDIlib_audio_frame_v2_t* audio_frame;
+} AudioFrameWrapper;
+
+static void
+audio_frame_free(void* data)
+{
+    AudioFrameWrapper* obj = (AudioFrameWrapper*)data;
+
+    NDIlib_recv_free_audio_v2(obj->recv, obj->audio_frame);
+    g_free(obj->audio_frame);
+    g_free(obj);
+}
+
+static GstFlowReturn
+gst_ndi_audio_src_create(GstPushSrc* pushsrc, GstBuffer** buffer)
+{
+    GstNdiAudioSrc* self = GST_NDI_AUDIO_SRC(pushsrc);
+    GST_DEBUG_OBJECT(self, "1");
+
+    if (self->pNDI_recv != NULL) {
+        NDIlib_audio_frame_v2_t* audio_frame = (NDIlib_audio_frame_v2_t*)g_malloc0(sizeof(NDIlib_audio_frame_v2_t));
+        NDIlib_frame_type_e res = NDIlib_frame_type_none;
+        do {
+            res = NDIlib_recv_capture_v2(self->pNDI_recv, NULL, audio_frame, NULL, 5000);
+        } while (res != NDIlib_frame_type_audio && res != NDIlib_frame_type_none);
+
+        if (res == NDIlib_frame_type_audio) {
+            AudioFrameWrapper* obj = (AudioFrameWrapper*)g_malloc0(sizeof(AudioFrameWrapper));
+            obj->recv = self->pNDI_recv;
+            obj->audio_frame = audio_frame;
+
+            gsize size = audio_frame->no_samples * audio_frame->no_channels * sizeof(float);
+
+            *buffer = gst_buffer_new_wrapped_full((GstMemoryFlags)GST_MEMORY_FLAG_READONLY,
+                (gpointer)audio_frame->p_data, size, 0, size,
+                obj, (GDestroyNotify)audio_frame_free);
+        }
+        else {
+            g_free(audio_frame);
+        }
+    }
+
+    return GST_FLOW_OK;
+}
+
+
+static gboolean 
+gst_ndi_audio_src_open(GstAudioSrc* asrc) {
+   GstNdiAudioSrc *self = GST_NDI_AUDIO_SRC (asrc);
+
+   GST_DEBUG_OBJECT(self, "1");
+
+    NDIlib_recv_create_v3_t create;
+    create.source_to_connect_to.p_url_address = self->device_path;
+    create.source_to_connect_to.p_ndi_name = "";
+    create.p_ndi_recv_name = NULL;
+
+    self->pNDI_recv = NDIlib_recv_create_v3(&create);
+
+    if (self->pNDI_recv != NULL) {
+        NDIlib_audio_frame_v2_t audio_frame = gst_ndi_util_get_audio_frame(self->pNDI_recv, 5000);
+        if (audio_frame.sample_rate > 0) {
+            GstCaps* caps = gst_util_create_audio_caps(&audio_frame);
+            NDIlib_recv_free_audio_v2(self->pNDI_recv, &audio_frame);
+            GST_DEBUG_OBJECT(self, "Audio frame caps %" GST_PTR_FORMAT, caps);
+        }
+    }
+   return TRUE;
+}
+
+static gboolean 
+gst_ndi_audio_src_close(GstAudioSrc* asrc) {
+   GstNdiAudioSrc *self = GST_NDI_AUDIO_SRC (asrc);
+   GST_DEBUG_OBJECT(self, "2");
+   return TRUE;
+}
+
+static gboolean 
+gst_ndi_audio_src_prepare(GstAudioSrc* asrc, GstAudioRingBufferSpec* spec) {
+   GstNdiAudioSrc *self = GST_NDI_AUDIO_SRC (asrc);
+   guint bpf, rate;
+
+   GST_DEBUG_OBJECT(self, "3");
+
+   bpf = GST_AUDIO_INFO_BPF (&spec->info);
+   rate = GST_AUDIO_INFO_RATE (&spec->info);
+   GST_INFO_OBJECT (self, "bpf is %i bytes, rate is %i Hz",  bpf, rate);
+
+   return TRUE;
+}
+
+static gboolean 
+gst_ndi_audio_src_unprepare(GstAudioSrc* asrc) {
+   GstNdiAudioSrc *self = GST_NDI_AUDIO_SRC (asrc);
+   GST_DEBUG_OBJECT(self, "4");
+   return TRUE;
+}
+
+static guint 
+gst_ndi_audio_src_read(GstAudioSrc* asrc, gpointer data, guint length, GstClockTime* timestamp) {
+   GstNdiAudioSrc *self = GST_NDI_AUDIO_SRC (asrc);
+   GST_DEBUG_OBJECT(self, "%u %" GST_TIME_FORMAT, length, GST_TIME_ARGS(*timestamp));
+
+   if (self->pNDI_recv != NULL) {
+       NDIlib_audio_frame_v2_t audio_frame = gst_ndi_util_get_audio_frame(self->pNDI_recv, 10);
+       if (audio_frame.sample_rate > 0) {
+           GstBuffer* tmp = gst_buffer_new_allocate(NULL, audio_frame.no_samples * 8, NULL);
+           gsize bufferOffset = 0;
+           int frameOffset = 0;
+           gint8* frame = (gint8*)audio_frame.p_data;
+           gint8* src = NULL;
+           for (int i = 0; i < audio_frame.no_samples * 2; ++i) {
+               if (i & 1) {
+                   src = frame + audio_frame.channel_stride_in_bytes + frameOffset;
+                   frameOffset += sizeof(float);
+               }
+               else {
+                   src = frame + frameOffset;
+               }
+               gst_buffer_fill(tmp, bufferOffset, src, sizeof(float));
+               bufferOffset += sizeof(float);
+           }
+           gst_adapter_push(self->adapter, tmp);
+           NDIlib_recv_free_audio_v2(self->pNDI_recv, &audio_frame);
+       }
+   }
+
+   guint wanted = length;
+   if (gst_adapter_available(self->adapter) >= wanted) {
+       const guint8* ndiData = gst_adapter_map(self->adapter, wanted);
+       memcpy(data, ndiData, wanted);
+       gst_adapter_unmap(self->adapter);
+       gst_adapter_flush(self->adapter, wanted);
+       return length;
+   }
+   return 0;
+}
+
+static guint 
+gst_ndi_audio_src_delay(GstAudioSrc* asrc) {
+   GstNdiAudioSrc *self = GST_NDI_AUDIO_SRC (asrc);
+   GST_DEBUG_OBJECT(self, "6");
+   return 100;
+}
+
+static void 
+gst_ndi_audio_src_reset(GstAudioSrc* asrc) {
+   GstNdiAudioSrc *self = GST_NDI_AUDIO_SRC (asrc);
+   GST_DEBUG_OBJECT(self, "7");
 }

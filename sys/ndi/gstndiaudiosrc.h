@@ -2,8 +2,8 @@
 #define __GST_NDI_AUDIO_SRC_H__
 
 #include <gst/gst.h>
-#include <gst/base/base.h>
 #include <gst/audio/audio.h>
+#include <gst/audio/gstaudiosrc.h>
 
 #include <ndi/Processing.NDI.Lib.h>
 
@@ -21,16 +21,16 @@ typedef struct _GstNdiAudioSrcClass GstNdiAudioSrcClass;
 
 struct _GstNdiAudioSrc
 {
-	GstPushSrc parent;
+	GstAudioSrc parent;
 	NDIlib_recv_instance_t pNDI_recv;
 	gchar* device_path;
 	gchar* device_name;
-
+	GstAdapter* adapter;
 };
 
 struct _GstNdiAudioSrcClass
 {
-	GstPushSrcClass parent_class;
+	GstAudioSrcClass parent_class;
 };
 
 GType gst_ndi_audio_src_get_type(void);
