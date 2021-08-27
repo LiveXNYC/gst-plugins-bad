@@ -56,8 +56,6 @@ gst_ndi_device_finalize(GObject* object)
     g_free(self->device_path);
 
     G_OBJECT_CLASS(gst_ndi_device_parent_class)->finalize(object);
-    
-    NDIlib_destroy();
 }
 
 static GstElement*
