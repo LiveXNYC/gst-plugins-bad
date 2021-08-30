@@ -56,7 +56,7 @@ thread_func(gpointer data) {
     // We are going to create an NDI finder that locates sources on the network.
     while (!self->isTerminated) {
         g_mutex_lock(&self->list_lock);
-        NDIlib_find_wait_for_sources(pNDI_find, 100);
+        NDIlib_find_wait_for_sources(pNDI_find, 1000);
         g_mutex_unlock(&self->list_lock);
         g_usleep(100000);
     }
@@ -94,32 +94,6 @@ gst_ndi_device_provider_finalize(GObject* object) {
     }
     // Destroy the NDI finder
     NDIlib_find_destroy(pNDI_find);
-}
-
-static GstDevice*
-gst_ndi_device_provider_create_device(const char* id, const char* name, gboolean isVideo) {
-    GstStructure* props = gst_structure_new("ndi-proplist",
-        "device.api", G_TYPE_STRING, "NDI",
-        "device.strid", G_TYPE_STRING, GST_STR_NULL(id),
-        "device.friendlyName", G_TYPE_STRING, name, NULL);
-
-    GstCaps* caps = isVideo 
-        ? gst_util_create_default_video_caps() 
-        : gst_util_create_default_audio_caps();
-
-    GstDevice* device = g_object_new(GST_TYPE_NDI_DEVICE, "device", id,
-        "display-name", name,
-        "caps", caps,
-        "device-class", isVideo ? "Video/Source" : "Audio/Source",
-        "properties", props,
-        NULL);
-    GST_NDI_DEVICE(device)->isVideo = isVideo;
-    if (caps) {
-        gst_caps_unref(caps);
-    }
-    gst_structure_free(props);
-
-    return device;
 }
 
 static GList*

@@ -23,6 +23,8 @@ struct _GstNdiDevice
     gboolean isVideo;
 };
 
+GstDevice*
+gst_ndi_device_provider_create_device(const char* id, const char* name, gboolean isVideo);
 
 GType gst_ndi_device_get_type(void);
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(GstNdiDevice, gst_object_unref)

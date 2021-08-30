@@ -3,6 +3,7 @@
 #endif
 
 #include "gstndidevice.h"
+#include "gstndiutil.h"
 #include <ndi/Processing.NDI.Lib.h>
 
 GST_DEBUG_CATEGORY_EXTERN(gst_ndi_debug);
@@ -108,4 +109,30 @@ gst_ndi_device_set_property(GObject* object, guint prop_id,
         G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
         break;
     }
+}
+
+GstDevice*
+gst_ndi_device_provider_create_device(const char* id, const char* name, gboolean isVideo) {
+    GstStructure* props = gst_structure_new("ndi-proplist",
+        "device.api", G_TYPE_STRING, "NDI",
+        "device.strid", G_TYPE_STRING, GST_STR_NULL(id),
+        "device.friendlyName", G_TYPE_STRING, name, NULL);
+
+    GstCaps* caps = isVideo
+        ? gst_util_create_default_video_caps()
+        : gst_util_create_default_audio_caps();
+
+    GstDevice* device = g_object_new(GST_TYPE_NDI_DEVICE, "device", id,
+        "display-name", name,
+        "caps", caps,
+        "device-class", isVideo ? "Video/Source" : "Audio/Source",
+        "properties", props,
+        NULL);
+    GST_NDI_DEVICE(device)->isVideo = isVideo;
+    if (caps) {
+        gst_caps_unref(caps);
+    }
+    gst_structure_free(props);
+
+    return device;
 }

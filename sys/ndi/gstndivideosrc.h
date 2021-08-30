@@ -21,11 +21,17 @@ typedef struct _GstNdiVideoSrcClass   GstNdiVideoSrcClass;
 struct _GstNdiVideoSrc
 {
     GstPushSrc parent;
+
     gchar* device_path;
     gchar* device_name;
     NDIlib_recv_instance_t pNDI_recv;
     int xres, yres;
     int frame_rate_N, frame_rate_D;
+    GstCaps* caps;
+
+    GThread* thread;
+    gboolean is_terminated;
+    GAsyncQueue* queue;
 };
 
 struct _GstNdiVideoSrcClass

@@ -22,10 +22,15 @@ typedef struct _GstNdiAudioSrcClass GstNdiAudioSrcClass;
 struct _GstNdiAudioSrc
 {
 	GstAudioSrc parent;
+	
 	NDIlib_recv_instance_t pNDI_recv;
 	gchar* device_path;
 	gchar* device_name;
 	GstAdapter* adapter;
+	GstCaps * caps;
+	
+	GThread* thread;
+	gboolean is_terminated;
 };
 
 struct _GstNdiAudioSrcClass
