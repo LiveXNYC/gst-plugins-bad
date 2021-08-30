@@ -387,7 +387,7 @@ gst_ndi_device_release_finder() {
 }
 
 GList*
-gst_decklink_get_devices(void) {
+gst_ndi_get_devices(void) {
     GList* list = NULL;
 
     gst_ndi_device_create_finder();
