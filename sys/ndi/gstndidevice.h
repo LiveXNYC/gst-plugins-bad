@@ -2,6 +2,7 @@
 #define __GST_NDI_DEVICE_H__
 
 #include <gst/gst.h>
+#include <ndi/Processing.NDI.Lib.h>
 
 G_BEGIN_DECLS
 
@@ -25,6 +26,45 @@ struct _GstNdiDevice
 
 GstDevice*
 gst_ndi_device_provider_create_device(const char* id, const char* name, gboolean isVideo);
+
+typedef struct _GstNdiInput GstNdiInput;
+struct _GstNdiInput {
+    /* Everything below protected by mutex */
+    GMutex lock;
+    GThread* read_thread;
+    gboolean is_read_terminated;
+
+    NDIlib_recv_instance_t pNDI_recv;
+    /* Set by the video source */
+    void (*got_video_frame) (GstElement* ndi_device, gint8* buffer, guint size);
+
+    /* Set by the audio source */
+    void (*got_audio_frame) (GstElement* ndi_device, gint8* buffer, guint size, guint stride);
+
+    gboolean is_started;
+
+    GstElement* audiosrc;
+    gboolean audio_enabled;
+    GstElement* videosrc;
+    gboolean video_enabled;
+
+    int xres, yres;
+    int frame_rate_N, frame_rate_D;
+    NDIlib_frame_format_type_e frame_format_type;
+    NDIlib_FourCC_video_type_e FourCC;
+
+    guint channels;
+    guint sample_rate;
+};
+
+typedef struct _GstNdiOutput GstNdiOutput;
+struct _GstNdiOutput {
+    /* Everything below protected by mutex */
+    GMutex lock;
+};
+
+GstNdiInput * gst_ndi_acquire_input(const char* id, GstElement * src, gboolean is_audio);
+void         gst_ndi_release_input(const char* id, GstElement * src, gboolean is_audio);
 
 GType gst_ndi_device_get_type(void);
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(GstNdiDevice, gst_object_unref)

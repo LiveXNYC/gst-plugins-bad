@@ -4,8 +4,7 @@
 #include <gst/gst.h>
 #include <gst/audio/audio.h>
 #include <gst/audio/gstaudiosrc.h>
-
-#include <ndi/Processing.NDI.Lib.h>
+#include "gstndidevice.h"
 
 G_BEGIN_DECLS
 
@@ -23,14 +22,12 @@ struct _GstNdiAudioSrc
 {
 	GstAudioSrc parent;
 	
-	NDIlib_recv_instance_t pNDI_recv;
+	GstNdiInput* input;
 	gchar* device_path;
 	gchar* device_name;
 	GstAdapter* adapter;
+	GMutex adapter_mutex;
 	GstCaps * caps;
-	
-	GThread* thread;
-	gboolean is_terminated;
 };
 
 struct _GstNdiAudioSrcClass

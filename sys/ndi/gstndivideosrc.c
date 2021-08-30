@@ -2,6 +2,7 @@
 #include "config.h"
 #endif
 
+#include "gstndiaudiosrc.h"
 #include "gstndivideosrc.h"
 #include "gstndiutil.h"
 #include <string.h>
@@ -51,8 +52,6 @@ gst_ndi_video_src_create(GstPushSrc* pushsrc, GstBuffer** buffer);
 
 static void gst_ndi_video_src_acquire_input(GstNdiVideoSrc* self);
 static void gst_ndi_video_src_release_input(GstNdiVideoSrc* self);
-static gpointer thread_func(gpointer data);
-
 
 #define gst_ndi_video_src_parent_class parent_class
 G_DEFINE_TYPE(GstNdiVideoSrc, gst_ndi_video_src, GST_TYPE_PUSH_SRC);
@@ -110,7 +109,6 @@ gst_ndi_video_src_init(GstNdiVideoSrc* self)
     gst_base_src_set_live(GST_BASE_SRC(self), TRUE);
     gst_base_src_set_do_timestamp(GST_BASE_SRC(self), TRUE);
 
-    self->pNDI_recv = NULL;
     self->xres = 0;
     self->yres = 0;
     self->frame_rate_N = 0;
@@ -118,8 +116,6 @@ gst_ndi_video_src_init(GstNdiVideoSrc* self)
     self->device_path = NULL;
     self->device_name = NULL;
     self->caps = NULL;
-    self->thread = NULL;
-    self->is_terminated = FALSE;
     self->queue = g_async_queue_new();
 }
 
@@ -185,10 +181,17 @@ gst_ndi_video_src_set_property(GObject* object, guint prop_id,
 }
 
 static void
-gst_ndi_video_src_send_caps_event(GstBaseSrc* src, const NDIlib_video_frame_v2_t* frame) {
-    GstCaps* caps = gst_util_create_video_caps(frame);
+gst_ndi_video_src_send_caps_event(GstNdiVideoSrc* self, const NDIlib_video_frame_v2_t* frame) {
+    GstCaps* caps = gst_caps_new_simple("video/x-raw",
+        "format", G_TYPE_STRING, gst_ndi_util_get_format(self->input->FourCC),
+        "width", G_TYPE_INT, (int)self->input->xres,
+        "height", G_TYPE_INT, (int)self->input->yres,
+        "framerate", GST_TYPE_FRACTION, self->input->frame_rate_N, self->input->frame_rate_D,
+        "interlace-mode", G_TYPE_STRING, gst_ndi_util_get_frame_format(self->input->frame_format_type),
+        NULL);
 
-    GstPad* srcpad = GST_BASE_SRC_PAD(src);
+
+    GstPad* srcpad = GST_BASE_SRC_PAD(self);
     GstEvent* event = gst_pad_get_sticky_event(srcpad, GST_EVENT_CAPS, 0);
     if (event) {
         GstCaps* event_caps;
@@ -323,25 +326,16 @@ static GstFlowReturn
 gst_ndi_video_src_fill(GstPushSrc* pushsrc, GstBuffer* buf) {
     GstNdiVideoSrc* self = GST_NDI_VIDEO_SRC(pushsrc);
 
-    if (self->pNDI_recv != NULL) {
-        NDIlib_video_frame_v2_t video_frame = gst_ndi_util_get_video_frame(self->pNDI_recv, 100);
-        if (video_frame.xres > 0 && video_frame.yres > 0) {
             GstMapInfo info;
             if (!gst_buffer_map(buf, &info, GST_MAP_WRITE))
             {
-                NDIlib_recv_free_video_v2(self->pNDI_recv, &video_frame);
                 return GST_FLOW_ERROR;
             }
             guint8* data = info.data;
-            memcpy(data, video_frame.p_data, info.size);
+            //memcpy(data, video_frame.p_data, info.size);
             GST_BUFFER_DTS(buf) = GST_CLOCK_TIME_NONE;
             gst_buffer_unmap(buf, &info);
 
-            NDIlib_recv_free_video_v2(self->pNDI_recv, &video_frame);
-        }
-        else {
-        }
-    }
 
     return GST_FLOW_OK;
 }
@@ -364,82 +358,35 @@ gst_ndi_video_src_create(GstPushSrc* pushsrc, GstBuffer** buffer)
 
 
 
+static void gst_ndi_video_src_got_frame(GstElement* ndi_device, gint8* buffer, guint size) {
+    GstNdiVideoSrc* self = GST_NDI_VIDEO_SRC(ndi_device);
+
+    GST_DEBUG_OBJECT(self, "Got the frame");
+    if (self->caps == NULL) {
+        //self->caps = gst_util_create_video_caps(&video_frame);
+        gst_ndi_video_src_send_caps_event(GST_BASE_SRC(self), NULL);
+        //GST_DEBUG_OBJECT(self, "caps %" GST_PTR_FORMAT, self->caps);
+    }
+
+    GstBuffer* buf = gst_buffer_new_allocate(NULL, size, NULL);
+    gst_buffer_fill(buf, 0, buffer, size);
+
+    g_async_queue_push(self->queue, buf);
+}
 
 static void
 gst_ndi_video_src_acquire_input(GstNdiVideoSrc* self) {
-    if (self->pNDI_recv == NULL) {
-        NDIlib_recv_create_v3_t create;
-        create.source_to_connect_to.p_url_address = self->device_path;
-        create.source_to_connect_to.p_ndi_name = "";
-        create.color_format = NDIlib_recv_color_format_UYVY_BGRA;
-        create.bandwidth = NDIlib_recv_bandwidth_highest;
-        create.allow_video_fields = FALSE;
-        create.p_ndi_recv_name = NULL;
-
-        self->pNDI_recv = NDIlib_recv_create_v3(&create);
-
-        GError* error = NULL;
-        self->thread =
-            g_thread_try_new("GstNdiVideoReader", thread_func, (gpointer)self, &error);
+    if (self->input == NULL) {
+        self->input = gst_ndi_acquire_input(self->device_path, GST_ELEMENT(self), FALSE);
+        self->input->got_video_frame = gst_ndi_video_src_got_frame;
     }
 }
 
 static void gst_ndi_video_src_release_input(GstNdiVideoSrc* self) {
-    if (self->thread) {
-        GThread* thread = g_steal_pointer(&self->thread);
-        self->is_terminated = TRUE;
-
-        g_thread_join(thread);
-        self->thread = NULL;
-    }
-
-    if (self->pNDI_recv != NULL) {
-        NDIlib_recv_destroy(self->pNDI_recv);
-        self->pNDI_recv = NULL;
+    if (self->input != NULL) {
+        gst_ndi_release_input(self->device_path, GST_ELEMENT(self), TRUE);
+        self->input->got_video_frame = NULL;
+        self->input = NULL;
     }
 }
 
-static gpointer thread_func(gpointer data) {
-    GstNdiVideoSrc* self = GST_NDI_VIDEO_SRC(data);
-
-    GST_DEBUG_OBJECT(self, "Thread Start");
-    
-    while (!self->is_terminated) {
-        NDIlib_video_frame_v2_t video_frame;
-        NDIlib_frame_type_e res = NDIlib_recv_capture_v2(self->pNDI_recv, &video_frame, NULL, NULL, 100);
-
-        if (res == NDIlib_frame_type_video) {
-            GST_DEBUG_OBJECT(self, "Got the frame");
-            if (self->caps == NULL) {
-                self->caps = gst_util_create_video_caps(&video_frame);
-                gst_ndi_video_src_send_caps_event(GST_BASE_SRC(self), &video_frame);
-                self->xres = video_frame.xres;
-                self->yres = video_frame.yres;
-                self->frame_rate_N = video_frame.frame_rate_N;
-                self->frame_rate_D = video_frame.frame_rate_D;
-                GST_DEBUG_OBJECT(self, "caps %" GST_PTR_FORMAT, self->caps);
-            }
-
-            auto size = self->xres * self->yres * 2;
-            GstBuffer* buffer = gst_buffer_new_allocate(NULL, size, NULL);
-            gst_buffer_fill(buffer, 0, video_frame.p_data, size);
-
-            g_async_queue_push(self->queue, buffer);
-
-            NDIlib_recv_free_video_v2(self->pNDI_recv, &video_frame);
-        }
-        else {
-            GST_DEBUG_OBJECT(self, "res %u", res);
-
-            if (res == NDIlib_frame_type_status_change) {
-                self->caps = gst_util_create_video_caps(&video_frame);
-                GST_DEBUG_OBJECT(self, "caps %" GST_PTR_FORMAT, self->caps);
-            }
-        }
-
-    }
-
-    GST_DEBUG_OBJECT(self, "Thread Stop");
-
-    return NULL;
-}

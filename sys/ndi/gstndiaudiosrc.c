@@ -90,11 +90,10 @@ gst_ndi_audio_src_init(GstNdiAudioSrc* self)
     gst_base_src_set_live(GST_BASE_SRC(self), TRUE);
     gst_base_src_set_format(GST_BASE_SRC(self), GST_FORMAT_TIME);
     
-    self->pNDI_recv = NULL;
     self->adapter = gst_adapter_new();
-    self->thread = NULL;
-    self->is_terminated = FALSE;
     self->caps = NULL;
+    g_mutex_init(&self->adapter_mutex);
+    self->input = NULL;
 
     gst_pad_use_fixed_caps(GST_BASE_SRC_PAD(self));
 }
@@ -103,11 +102,6 @@ static void
 gst_ndi_audio_src_finalize(GObject* object)
 {
     GstNdiAudioSrc* self = GST_NDI_AUDIO_SRC_CAST(object);
-
-    if (self->pNDI_recv != NULL) {
-        NDIlib_recv_destroy(self->pNDI_recv);
-        self->pNDI_recv = NULL;
-    }
 
     if (self->adapter) {
         g_object_unref(self->adapter);
@@ -123,6 +117,7 @@ gst_ndi_audio_src_finalize(GObject* object)
         gst_caps_unref(self->caps);
         self->caps = NULL;
     }
+    g_mutex_clear(&self->adapter_mutex);
 
     G_OBJECT_CLASS(parent_class)->finalize(object);
 }
@@ -249,24 +244,36 @@ gst_ndi_audio_src_unprepare(GstAudioSrc* asrc) {
 static guint 
 gst_ndi_audio_src_read(GstAudioSrc* asrc, gpointer data, guint length, GstClockTime* timestamp) {
    GstNdiAudioSrc *self = GST_NDI_AUDIO_SRC (asrc);
-   GST_DEBUG_OBJECT(self, "%u", length);
 
    guint wanted = length;
-   if (gst_adapter_available(self->adapter) >= wanted) {
+   g_mutex_lock(&self->adapter_mutex);
+   gsize size = gst_adapter_available(self->adapter);
+   g_mutex_unlock(&self->adapter_mutex);
+   GST_DEBUG_OBJECT(self, "%u %llu", length, size);
+   if (size >= wanted) {
+       g_mutex_lock(&self->adapter_mutex);
        const guint8* ndiData = gst_adapter_map(self->adapter, wanted);
        memcpy(data, ndiData, wanted);
        gst_adapter_unmap(self->adapter);
        gst_adapter_flush(self->adapter, wanted);
+       g_mutex_unlock(&self->adapter_mutex);
        return length;
    }
+   
    return 0;
 }
 
 static guint 
 gst_ndi_audio_src_delay(GstAudioSrc* asrc) {
    GstNdiAudioSrc *self = GST_NDI_AUDIO_SRC (asrc);
-   GST_DEBUG_OBJECT(self, "6");
-   return 1;
+   
+   g_mutex_lock(&self->adapter_mutex);
+   gsize size = gst_adapter_available(self->adapter);
+   g_mutex_unlock(&self->adapter_mutex);
+   
+   GST_DEBUG_OBJECT(self, "%llu", size);
+
+   return size/8;
 }
 
 static void 
@@ -278,82 +285,47 @@ gst_ndi_audio_src_reset(GstAudioSrc* asrc) {
 
 
 
-static gpointer thread_func(gpointer data) {
-    GstNdiAudioSrc* self = GST_NDI_AUDIO_SRC(data);
+void gst_ndi_audio_src_got_frame(GstElement* ndi_device, gint8* buffer, guint size, guint stride) {
+    GstNdiAudioSrc* self = GST_NDI_AUDIO_SRC(ndi_device);
 
-    GST_DEBUG_OBJECT(self, "Thread Start");
+    GST_DEBUG_OBJECT(self, "Got frame");
+    if (self->caps == NULL) {
+        //self->caps = gst_util_create_audio_caps(&audio_frame);
+        GST_DEBUG_OBJECT(self, "caps %" GST_PTR_FORMAT, self->caps);
+    }
 
-    while (!self->is_terminated) {
-        NDIlib_audio_frame_v2_t audio_frame;
-        NDIlib_frame_type_e res = NDIlib_recv_capture_v2(self->pNDI_recv, NULL, &audio_frame, NULL, 10);
-
-        if (res == NDIlib_frame_type_audio) {
-            GST_DEBUG_OBJECT(self, "Got frame");
-            if (self->caps == NULL) {
-                self->caps = gst_util_create_audio_caps(&audio_frame);
-                GST_DEBUG_OBJECT(self, "caps %" GST_PTR_FORMAT, self->caps);
-            }
-
-            GstBuffer* tmp = gst_buffer_new_allocate(NULL, audio_frame.no_samples * 8, NULL);
-            gsize bufferOffset = 0;
-            int frameOffset = 0;
-            gint8* frame = (gint8*)audio_frame.p_data;
-            gint8* src = NULL;
-            for (int i = 0; i < audio_frame.no_samples * 2; ++i) {
-                if (i & 1) {
-                    src = frame + audio_frame.channel_stride_in_bytes + frameOffset;
-                    frameOffset += sizeof(float);
-                }
-                else {
-                    src = frame + frameOffset;
-                }
-                gst_buffer_fill(tmp, bufferOffset, src, sizeof(float));
-                bufferOffset += sizeof(float);
-            }
-
-            gst_adapter_push(self->adapter, tmp);
-            NDIlib_recv_free_audio_v2(self->pNDI_recv, &audio_frame);
+    GstBuffer* tmp = gst_buffer_new_allocate(NULL, size, NULL);
+    gsize bufferOffset = 0;
+    int frameOffset = 0;
+    gint8* frame = (gint8*)buffer;
+    gint8* src = NULL;
+    for (int i = 0; i < size / 4; ++i) {
+        if (i & 1) {
+            src = frame + stride + frameOffset;
+            frameOffset += sizeof(float);
         }
         else {
-            GST_DEBUG_OBJECT(self, "res %u", res);
-
-            if (res == NDIlib_frame_type_status_change) {
-                self->caps = gst_util_create_audio_caps(&audio_frame);
-                GST_DEBUG_OBJECT(self, "caps %" GST_PTR_FORMAT, self->caps);
-            }
+            src = frame + frameOffset;
         }
+        gst_buffer_fill(tmp, bufferOffset, src, sizeof(float));
+        bufferOffset += sizeof(float);
     }
-    GST_DEBUG_OBJECT(self, "Thread Stop");
-    return NULL;
+    g_mutex_lock(&self->adapter_mutex);
+    gst_adapter_push(self->adapter, tmp);
+    g_mutex_unlock(&self->adapter_mutex);
 }
 
 static void gst_ndi_audio_src_acquire_input(GstNdiAudioSrc* self) {
-    if (self->pNDI_recv == NULL) {
-        NDIlib_recv_create_v3_t create;
-        create.source_to_connect_to.p_url_address = self->device_path;
-        create.source_to_connect_to.p_ndi_name = "";
-        create.p_ndi_recv_name = NULL;
-
-        self->pNDI_recv = NDIlib_recv_create_v3(&create);
-        if (self->pNDI_recv) {
-            GError* error = NULL;
-            self->thread =
-                g_thread_try_new("GstNdiAudioReader", thread_func, (gpointer)self, &error);
-        }
+    if (self->input == NULL) {
+        self->input = gst_ndi_acquire_input(self->device_path, GST_ELEMENT(self), TRUE);
+        self->input->got_audio_frame = gst_ndi_audio_src_got_frame;
     }
 }
 
 static void gst_ndi_audio_src_release_input(GstNdiAudioSrc* self) {
-    if (self->thread) {
-        GThread* thread = g_steal_pointer(&self->thread);
-        self->is_terminated = TRUE;
-
-        g_thread_join(thread);
-        self->thread = NULL;
-    }
-
-    if (self->pNDI_recv != NULL) {
-        NDIlib_recv_destroy(self->pNDI_recv);
-        self->pNDI_recv = NULL;
+    if (self->input != NULL) {
+        gst_ndi_release_input(self->device_path, GST_ELEMENT(self), TRUE);
+        self->input->got_audio_frame = NULL;
+        self->input = NULL;
     }
 }

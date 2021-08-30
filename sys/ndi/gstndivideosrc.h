@@ -5,8 +5,6 @@
 #include <gst/video/video.h>
 #include <gst/base/gstpushsrc.h>
 
-#include <ndi/Processing.NDI.Lib.h>
-
 G_BEGIN_DECLS
 #define GST_TYPE_NDI_VIDEO_SRC gst_ndi_video_src_get_type()
 #define GST_NDI_VIDEO_SRC(obj)             (G_TYPE_CHECK_INSTANCE_CAST((obj), GST_TYPE_NDI_VIDEO_SRC, GstNdiVideoSrc))
@@ -22,15 +20,13 @@ struct _GstNdiVideoSrc
 {
     GstPushSrc parent;
 
+    GstNdiInput* input;
     gchar* device_path;
     gchar* device_name;
-    NDIlib_recv_instance_t pNDI_recv;
     int xres, yres;
     int frame_rate_N, frame_rate_D;
     GstCaps* caps;
 
-    GThread* thread;
-    gboolean is_terminated;
     GAsyncQueue* queue;
 };
 
