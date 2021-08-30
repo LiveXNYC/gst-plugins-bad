@@ -124,6 +124,8 @@ gst_ndi_video_src_finalize(GObject* object)
 {
     GstNdiVideoSrc* self = GST_NDI_VIDEO_SRC(object);
 
+    gst_ndi_video_src_release_input(self);
+
     if (self->device_name) {
         g_free(self->device_name);
         self->device_name = NULL;
@@ -132,8 +134,6 @@ gst_ndi_video_src_finalize(GObject* object)
         g_free(self->device_path);
         self->device_path = NULL;
     }
-
-    gst_ndi_video_src_release_input(self);
 
     G_OBJECT_CLASS(parent_class)->finalize(object);
 }
@@ -182,6 +182,10 @@ gst_ndi_video_src_set_property(GObject* object, guint prop_id,
 
 static void
 gst_ndi_video_src_send_caps_event(GstNdiVideoSrc* self, const NDIlib_video_frame_v2_t* frame) {
+    if (self->input == NULL) {
+        return;
+    }
+
     self->caps = gst_caps_new_simple("video/x-raw",
         "format", G_TYPE_STRING, gst_ndi_util_get_format(self->input->FourCC),
         "width", G_TYPE_INT, (int)self->input->xres,
@@ -378,8 +382,8 @@ gst_ndi_video_src_acquire_input(GstNdiVideoSrc* self) {
 
 static void gst_ndi_video_src_release_input(GstNdiVideoSrc* self) {
     if (self->input != NULL) {
-        gst_ndi_release_input(self->device_path, GST_ELEMENT(self), TRUE);
         self->input->got_video_frame = NULL;
+        gst_ndi_release_input(self->device_path, GST_ELEMENT(self), FALSE);
         self->input = NULL;
     }
 }

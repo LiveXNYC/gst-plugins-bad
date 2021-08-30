@@ -300,12 +300,16 @@ gst_ndi_acquire_input(const char* id, GstElement * src, gboolean is_audio) {
         Device* device = (Device*)g_ptr_array_index(devices, i);
         if (strcmp(device->id, id) == 0) {
             if (is_audio) {
-                device->input.audiosrc = src;
-                device->input.is_audio_enabled = TRUE;
+                if (device->input.audiosrc == NULL) {
+                    device->input.audiosrc = src;
+                    device->input.is_audio_enabled = TRUE;
+                }
             }
             else {
-                device->input.videosrc = src;
-                device->input.is_video_enabled = TRUE;
+                if (device->input.videosrc == NULL) {
+                    device->input.videosrc = src;
+                    device->input.is_video_enabled = TRUE;
+                }
             }
 
             if (device->input.read_thread == NULL) {
@@ -327,12 +331,16 @@ void
         Device* device = (Device*)g_ptr_array_index(devices, i);
         if (strcmp(device->id, id) == 0) {
             if (is_audio) {
-                device->input.audiosrc = NULL;
-                device->input.is_audio_enabled = FALSE;
+                if (device->input.audiosrc == src) {
+                    device->input.audiosrc = NULL;
+                    device->input.is_audio_enabled = FALSE;
+                }
             }
             else {
-                device->input.videosrc = NULL;
-                device->input.is_video_enabled = FALSE;
+                if (device->input.videosrc == src) {
+                    device->input.videosrc = NULL;
+                    device->input.is_video_enabled = FALSE;
+                }
             }
 
             if (device->input.read_thread 
@@ -342,6 +350,7 @@ void
                 device->input.is_read_terminated = TRUE;
 
                 g_thread_join(read_thread);
+                device->input.read_thread = NULL;
             }
         }
     }

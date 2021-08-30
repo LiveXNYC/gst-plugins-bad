@@ -102,6 +102,10 @@ static void
 gst_ndi_audio_src_finalize(GObject* object)
 {
     GstNdiAudioSrc* self = GST_NDI_AUDIO_SRC_CAST(object);
+    
+    GST_DEBUG_OBJECT(self, "Finalize");
+
+    gst_ndi_audio_src_release_input(self);
 
     if (self->adapter) {
         g_object_unref(self->adapter);
@@ -215,7 +219,7 @@ gst_ndi_audio_src_open(GstAudioSrc* asrc) {
 static gboolean 
 gst_ndi_audio_src_close(GstAudioSrc* asrc) {
    GstNdiAudioSrc *self = GST_NDI_AUDIO_SRC (asrc);
-   GST_DEBUG_OBJECT(self, "2");
+   GST_DEBUG_OBJECT(self, "Close");
 
    gst_ndi_audio_src_release_input(self);
 
@@ -280,9 +284,6 @@ gst_ndi_audio_src_reset(GstAudioSrc* asrc) {
    GST_DEBUG_OBJECT(self, "7");
 }
 
-
-
-
 void gst_ndi_audio_src_got_frame(GstElement* ndi_device, gint8* buffer, guint size, guint stride) {
     GstNdiAudioSrc* self = GST_NDI_AUDIO_SRC(ndi_device);
 
@@ -315,6 +316,7 @@ void gst_ndi_audio_src_got_frame(GstElement* ndi_device, gint8* buffer, guint si
 
 static void gst_ndi_audio_src_acquire_input(GstNdiAudioSrc* self) {
     if (self->input == NULL) {
+        GST_DEBUG_OBJECT(self, "Acquire Input");
         self->input = gst_ndi_acquire_input(self->device_path, GST_ELEMENT(self), TRUE);
         self->input->got_audio_frame = gst_ndi_audio_src_got_frame;
     }
@@ -322,8 +324,9 @@ static void gst_ndi_audio_src_acquire_input(GstNdiAudioSrc* self) {
 
 static void gst_ndi_audio_src_release_input(GstNdiAudioSrc* self) {
     if (self->input != NULL) {
-        gst_ndi_release_input(self->device_path, GST_ELEMENT(self), TRUE);
+        GST_DEBUG_OBJECT(self, "Release Input");
         self->input->got_audio_frame = NULL;
+        gst_ndi_release_input(self->device_path, GST_ELEMENT(self), TRUE);
         self->input = NULL;
     }
 }
