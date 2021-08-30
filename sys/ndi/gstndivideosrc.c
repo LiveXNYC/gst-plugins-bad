@@ -182,7 +182,7 @@ gst_ndi_video_src_set_property(GObject* object, guint prop_id,
 
 static void
 gst_ndi_video_src_send_caps_event(GstNdiVideoSrc* self, const NDIlib_video_frame_v2_t* frame) {
-    GstCaps* caps = gst_caps_new_simple("video/x-raw",
+    self->caps = gst_caps_new_simple("video/x-raw",
         "format", G_TYPE_STRING, gst_ndi_util_get_format(self->input->FourCC),
         "width", G_TYPE_INT, (int)self->input->xres,
         "height", G_TYPE_INT, (int)self->input->yres,
@@ -196,16 +196,15 @@ gst_ndi_video_src_send_caps_event(GstNdiVideoSrc* self, const NDIlib_video_frame
     if (event) {
         GstCaps* event_caps;
         gst_event_parse_caps(event, &event_caps);
-        if (caps != event_caps) {
+        if (self->caps != event_caps) {
             gst_event_unref(event);
-            event = gst_event_new_caps(caps);
+            event = gst_event_new_caps(self->caps);
         }
     }
     else {
-        event = gst_event_new_caps(caps);
+        event = gst_event_new_caps(self->caps);
     }
     gst_pad_push_event(srcpad, event);
-    gst_caps_unref(caps);
 }
 
 static gboolean
@@ -389,4 +388,3 @@ static void gst_ndi_video_src_release_input(GstNdiVideoSrc* self) {
         self->input = NULL;
     }
 }
-

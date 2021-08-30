@@ -19,11 +19,6 @@ struct _GstNdiDeviceProviderClass
 struct _GstNdiDeviceProvider
 {
 	GstDeviceProvider	parent;
-	GThread*			thread;
-	gboolean			isTerminated;
-
-	GMutex              list_lock;
-	GCond               list_cond;
 };
 
 GType gst_ndi_device_provider_get_type(void);

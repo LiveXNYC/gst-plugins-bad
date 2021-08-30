@@ -24,8 +24,7 @@ struct _GstNdiDevice
     gboolean isVideo;
 };
 
-GstDevice*
-gst_ndi_device_provider_create_device(const char* id, const char* name, gboolean isVideo);
+GList* gst_decklink_get_devices(void);
 
 typedef struct _GstNdiInput GstNdiInput;
 struct _GstNdiInput {

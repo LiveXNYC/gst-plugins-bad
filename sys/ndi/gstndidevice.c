@@ -26,6 +26,14 @@ struct _Device
 };
 static GPtrArray * devices = NULL;
 
+static GThread* finder_thread = NULL;
+static gboolean is_finder_terminated = FALSE;
+static GMutex list_lock;
+static GCond  list_cond;
+static NDIlib_find_instance_t pNDI_find;
+static gboolean is_finder_started = FALSE;
+static GMutex data_mutex;
+static GCond  data_cond;
 
 static void gst_ndi_device_get_property(GObject* object,
     guint prop_id, GValue* value, GParamSpec* pspec);
@@ -35,6 +43,7 @@ static void gst_ndi_device_finalize(GObject* object);
 static GstElement* gst_ndi_device_create_element(GstDevice* device,
     const gchar* name);
 static void gst_ndi_device_update(const char* id);
+static gpointer thread_func(gpointer data);
 
 static void
 gst_ndi_device_class_init(GstNdiDeviceClass* klass)
@@ -122,10 +131,8 @@ gst_ndi_device_set_property(GObject* object, guint prop_id,
     }
 }
 
-GstDevice*
+static GstDevice*
 gst_ndi_device_provider_create_device(const char* id, const char* name, gboolean isVideo) {
-    gst_ndi_device_update(id);
-
     GstStructure* props = gst_structure_new("ndi-proplist",
         "device.api", G_TYPE_STRING, "NDI",
         "device.strid", G_TYPE_STRING, GST_STR_NULL(id),
@@ -173,6 +180,50 @@ gst_ndi_device_update(const char* id) {
     else {
         g_mutex_init(&device->input.lock);
         g_ptr_array_add(devices, device);
+    }
+}
+
+static void
+gst_ndi_device_create_finder() {
+    if (!pNDI_find) {
+        is_finder_started = FALSE;
+        is_finder_terminated = FALSE;
+
+        NDIlib_find_create_t p_create_settings;
+        p_create_settings.show_local_sources = true;
+        p_create_settings.p_extra_ips = NULL;
+        p_create_settings.p_groups = NULL;
+        pNDI_find = NDIlib_find_create_v2(&p_create_settings);
+
+        if (!pNDI_find) {
+            return;
+        }
+
+        GError* error = NULL;
+        finder_thread =
+            g_thread_try_new("GstNdiFinder", thread_func, (gpointer)NULL, &error);
+
+        g_mutex_lock(&data_mutex);
+        while (!is_finder_started)
+            g_cond_wait(&data_cond, &data_mutex);
+        g_mutex_unlock(&data_mutex);
+    }
+}
+
+static void
+gst_decklink_update_devices(void) {
+    gst_ndi_device_create_finder();
+    if (pNDI_find) {
+        // Get the updated list of sources
+        uint32_t no_sources = 0;
+        g_mutex_lock(&list_lock);
+        const NDIlib_source_t* p_sources = NDIlib_find_get_current_sources(pNDI_find, &no_sources);
+        g_mutex_unlock(&list_lock);
+
+        // Display all the sources.
+        for (uint32_t i = 0; i < no_sources; i++) {
+            gst_ndi_device_update(p_sources[i].p_url_address);
+        }
     }
 }
 
@@ -237,6 +288,8 @@ static gpointer
 
 GstNdiInput *
 gst_ndi_acquire_input(const char* id, GstElement * src, gboolean is_audio) {
+    gst_decklink_update_devices();
+
     if (!devices) {
         GST_DEBUG("ACQUIRE. No devices");
         return NULL;
@@ -286,4 +339,62 @@ void
             }
         }
     }
+}
+
+static gpointer
+thread_func(gpointer data) {
+    g_mutex_lock(&data_mutex);
+    NDIlib_find_wait_for_sources(pNDI_find, 1000);
+    is_finder_started = TRUE;
+    g_cond_signal(&data_cond);
+    g_mutex_unlock(&data_mutex);
+
+    while (!is_finder_terminated) {
+        g_mutex_lock(&list_lock);
+        NDIlib_find_wait_for_sources(pNDI_find, 100);
+        g_mutex_unlock(&list_lock);
+        g_usleep(100000);
+    }
+
+    return NULL;
+}
+
+static void
+gst_ndi_device_release_finder() {
+    if (finder_thread) {
+        GThread* thread = g_steal_pointer(&finder_thread);
+        is_finder_terminated = TRUE;
+
+        g_thread_join(thread);
+    }
+    // Destroy the NDI finder
+    NDIlib_find_destroy(pNDI_find);
+}
+
+GList*
+gst_decklink_get_devices(void) {
+    GList* list = NULL;
+
+    gst_ndi_device_create_finder();
+
+
+    if (pNDI_find) {
+        // Get the updated list of sources
+        uint32_t no_sources = 0;
+        g_mutex_lock(&list_lock);
+        const NDIlib_source_t* p_sources = NDIlib_find_get_current_sources(pNDI_find, &no_sources);
+        g_mutex_unlock(&list_lock);
+
+        // Display all the sources.
+        for (uint32_t i = 0; i < no_sources; i++) {
+            GST_DEBUG("%u. %s\n", i + 1, p_sources[i].p_ndi_name);
+            
+            GstDevice* device = gst_ndi_device_provider_create_device(p_sources[i].p_url_address, p_sources[i].p_ndi_name, TRUE);
+            list = g_list_append(list, device);
+
+            device = gst_ndi_device_provider_create_device(p_sources[i].p_url_address, p_sources[i].p_ndi_name, FALSE);
+            list = g_list_append(list, device);
+        }
+    }
+    return list;
 }
