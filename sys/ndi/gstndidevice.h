@@ -43,9 +43,9 @@ struct _GstNdiInput {
     gboolean is_started;
 
     GstElement* audiosrc;
-    gboolean audio_enabled;
+    gboolean is_audio_enabled;
     GstElement* videosrc;
-    gboolean video_enabled;
+    gboolean is_video_enabled;
 
     int xres, yres;
     int frame_rate_N, frame_rate_D;

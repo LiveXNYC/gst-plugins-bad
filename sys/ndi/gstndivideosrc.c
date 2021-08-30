@@ -325,16 +325,15 @@ static GstFlowReturn
 gst_ndi_video_src_fill(GstPushSrc* pushsrc, GstBuffer* buf) {
     GstNdiVideoSrc* self = GST_NDI_VIDEO_SRC(pushsrc);
 
-            GstMapInfo info;
-            if (!gst_buffer_map(buf, &info, GST_MAP_WRITE))
-            {
-                return GST_FLOW_ERROR;
-            }
-            guint8* data = info.data;
-            //memcpy(data, video_frame.p_data, info.size);
-            GST_BUFFER_DTS(buf) = GST_CLOCK_TIME_NONE;
-            gst_buffer_unmap(buf, &info);
-
+    GstMapInfo info;
+    if (!gst_buffer_map(buf, &info, GST_MAP_WRITE))
+    {
+        return GST_FLOW_ERROR;
+    }
+    guint8* data = info.data;
+    //memcpy(data, video_frame.p_data, info.size);
+    GST_BUFFER_DTS(buf) = GST_CLOCK_TIME_NONE;
+    gst_buffer_unmap(buf, &info);
 
     return GST_FLOW_OK;
 }
@@ -348,14 +347,10 @@ gst_ndi_video_src_create(GstPushSrc* pushsrc, GstBuffer** buffer)
     GstBuffer* buf = g_async_queue_timeout_pop(self->queue, 5000000);
     if (buf) {
         *buffer = buf;
+        return GST_FLOW_OK;
     }
-    return GST_FLOW_OK;
+    return GST_FLOW_ERROR;
 }
-
-
-
-
-
 
 static void gst_ndi_video_src_got_frame(GstElement* ndi_device, gint8* buffer, guint size) {
     GstNdiVideoSrc* self = GST_NDI_VIDEO_SRC(ndi_device);
