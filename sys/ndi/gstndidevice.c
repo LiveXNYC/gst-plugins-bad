@@ -254,7 +254,10 @@ static gpointer
              self->input.frame_format_type = video_frame.frame_format_type;
              self->input.FourCC = video_frame.FourCC;
              gsize size = video_frame.xres * video_frame.yres * 2;
-             self->input.got_video_frame(self->input.videosrc, (gint8*)video_frame.p_data, size);
+             if(self->input.got_video_frame){
+                 self->input.got_video_frame(self->input.videosrc, (gint8*)video_frame.p_data, size);
+             }
+             NDIlib_framesync_free_video(self->input.pNDI_recv, &video_frame);
          }
          
          NDIlib_framesync_capture_audio(self->input.pNDI_recv,&audio_frame,48000, 2, 3840);
@@ -264,6 +267,8 @@ static gpointer
                  self->input.got_audio_frame(self->input.audiosrc, (gint8*)audio_frame.p_data, audio_frame.no_samples * 8
                      , audio_frame.channel_stride_in_bytes);
              }
+             
+             NDIlib_framesync_free_audio(self->input.pNDI_recv, &audio_frame);
          }
          
      }
