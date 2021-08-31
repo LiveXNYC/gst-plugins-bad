@@ -34,6 +34,7 @@ struct _GstNdiInput {
     gboolean is_read_terminated;
 
     NDIlib_recv_instance_t pNDI_recv;
+    NDIlib_framesync_instance_t pNDI_recv_sync;
     /* Set by the video source */
     void (*got_video_frame) (GstElement* ndi_device, gint8* buffer, guint size);
 

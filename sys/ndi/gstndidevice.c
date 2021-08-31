@@ -201,12 +201,18 @@ static gpointer
 
         NDIlib_recv_create_v3_t create;
         create.source_to_connect_to.p_url_address = self->id;
-        create.source_to_connect_to.p_ndi_name = "";
+        create.source_to_connect_to.p_ndi_name = self->p_ndi_name;
         create.color_format = NDIlib_recv_color_format_UYVY_BGRA;
         create.bandwidth = NDIlib_recv_bandwidth_highest;
-        create.allow_video_fields = FALSE;
-        create.p_ndi_recv_name = NULL;
         self->input.pNDI_recv = NDIlib_recv_create_v3(&create);
+        
+        NDIlib_source_t connection;
+        connection.p_ndi_name = self->p_ndi_name;
+        NDILib_recv_connect(self->input.pNDI_recv,&connection);
+        
+        
+        self->input.pNDI_recv_sync = NDIlib_framesync_create(self->input.pNDI_recv);
+        
     }
 
     self->input.is_started = TRUE;
@@ -245,7 +251,7 @@ static gpointer
          NDIlib_audio_frame_v2_t audio_frame;
          NDIlib_video_frame_v2_t video_frame;
          
-         NDIlib_framesync_capture_video(self->input.pNDI_recv,&video_frame,NDIlib_frame_format_type_progressive);
+         NDIlib_framesync_capture_video(self->input.pNDI_recv_sync,&video_frame,NDIlib_frame_format_type_progressive);
          if(video_frame.p_data) {
              self->input.xres = video_frame.xres;
              self->input.yres = video_frame.yres;
@@ -257,10 +263,10 @@ static gpointer
              if(self->input.got_video_frame){
                  self->input.got_video_frame(self->input.videosrc, (gint8*)video_frame.p_data, size);
              }
-             NDIlib_framesync_free_video(self->input.pNDI_recv, &video_frame);
+             NDIlib_framesync_free_video(self->input.pNDI_recv_sync, &video_frame);
          }
          
-         NDIlib_framesync_capture_audio(self->input.pNDI_recv,&audio_frame,48000, 2, 3840);
+         NDIlib_framesync_capture_audio(self->input.pNDI_recv_sync,&audio_frame,48000, 2, 3840);
          
          if(audio_frame.p_data) {
              if (self->input.got_audio_frame) {
@@ -268,7 +274,7 @@ static gpointer
                      , audio_frame.channel_stride_in_bytes);
              }
              
-             NDIlib_framesync_free_audio(self->input.pNDI_recv, &audio_frame);
+             NDIlib_framesync_free_audio(self->input.pNDI_recv_sync, &audio_frame);
          }
          
      }
