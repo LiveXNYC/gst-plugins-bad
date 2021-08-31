@@ -4,6 +4,7 @@
 
 #include "gstndidevice.h"
 #include "gstndiutil.h"
+#include "gstndifinder.h"
 #include <ndi/Processing.NDI.Lib.h>
 
 GST_DEBUG_CATEGORY_EXTERN(gst_ndi_debug);
@@ -19,7 +20,7 @@ G_DEFINE_TYPE(GstNdiDevice, gst_ndi_device, GST_TYPE_DEVICE);
 
 typedef struct _Device Device;
 struct _Device
- {
+{
     gchar* id;
     gchar* p_ndi_name;
     GstNdiOutput output;
@@ -27,15 +28,6 @@ struct _Device
 };
 
 static GPtrArray * devices = NULL;
-
-static GThread* finder_thread = NULL;
-static gboolean is_finder_terminated = FALSE;
-static GMutex list_lock;
-static GCond  list_cond;
-static NDIlib_find_instance_t pNDI_find;
-static gboolean is_finder_started = FALSE;
-static GMutex data_mutex;
-static GCond  data_cond;
 
 static void gst_ndi_device_get_property(GObject* object,
     guint prop_id, GValue* value, GParamSpec* pspec);
@@ -154,10 +146,6 @@ gst_ndi_device_provider_create_device(const char* id, const char* name, gboolean
 
 static void
 gst_ndi_device_update(const NDIlib_source_t* source) {
-    if (!devices) {
-        devices = g_ptr_array_new();
-    }
-
     gboolean isFind = FALSE;
     for (guint i = 0; i < devices->len; ++i) {
         Device* device = (Device*)g_ptr_array_index(devices, i);
@@ -178,58 +166,21 @@ gst_ndi_device_update(const NDIlib_source_t* source) {
 
 static void
 gst_ndi_device_create_finder() {
-    if (!pNDI_find) {
-
-        GST_DEBUG("Creating Finder");
-        
-        is_finder_started = FALSE;
-        is_finder_terminated = FALSE;
-
-        NDIlib_find_create_t p_create_settings;
-        p_create_settings.show_local_sources = true;
-        p_create_settings.p_extra_ips = NULL;
-        p_create_settings.p_groups = NULL;
-        pNDI_find = NDIlib_find_create_v2(&p_create_settings);
-
-        if (!pNDI_find) {
-
-            GST_DEBUG("Creating Finder FAILED");
-            
-            return;
-        }
-
-        GST_DEBUG("Creating Finder Thread");
-
-        GError* error = NULL;
-        finder_thread =
-            g_thread_try_new("GstNdiFinder", thread_func, (gpointer)NULL, &error);
-
-        GST_DEBUG("Wait Signal");
-
-        g_mutex_lock(&data_mutex);
-        while (!is_finder_started)
-            g_cond_wait(&data_cond, &data_mutex);
-        g_mutex_unlock(&data_mutex);
-
-        GST_DEBUG("Signal Received");
-    }
-    else {
-        GST_DEBUG("Finder is created already");
-    }
+    gst_ndi_finder_create();
 }
 
 static void
 gst_decklink_update_devices(void) {
     gst_ndi_device_create_finder();
-    if (pNDI_find) {
 
+    if (!devices) {
+        devices = g_ptr_array_new();
+    }
+
+    uint32_t no_sources = 0;
+    const NDIlib_source_t* p_sources = gst_ndi_finder_get_sources(&no_sources);
+    if (p_sources != NULL) {
         GST_DEBUG("Upating devices");
-        
-        // Get the updated list of sources
-        uint32_t no_sources = 0;
-        g_mutex_lock(&list_lock);
-        const NDIlib_source_t* p_sources = NDIlib_find_get_current_sources(pNDI_find, &no_sources);
-        g_mutex_unlock(&list_lock);
 
         // Display all the sources.
         for (uint32_t i = 0; i < no_sources; i++) {
@@ -407,42 +358,9 @@ void
     }
 }
 
-static gpointer
-thread_func(gpointer data) {
-
-    GST_DEBUG("Finder Thread Started");
-    
-    g_mutex_lock(&data_mutex);
-    NDIlib_find_wait_for_sources(pNDI_find, 1000);
-
-    GST_DEBUG("Finder Thread Send Signal");
-
-    is_finder_started = TRUE;
-    g_cond_signal(&data_cond);
-    g_mutex_unlock(&data_mutex);
-
-    while (!is_finder_terminated) {
-        g_mutex_lock(&list_lock);
-        NDIlib_find_wait_for_sources(pNDI_find, 100);
-        g_mutex_unlock(&list_lock);
-        g_usleep(100000);
-    }
-    
-    GST_DEBUG("Finder Thread Finished");
-    
-    return NULL;
-}
-
 static void
 gst_ndi_device_release_finder() {
-    if (finder_thread) {
-        GThread* thread = g_steal_pointer(&finder_thread);
-        is_finder_terminated = TRUE;
-
-        g_thread_join(thread);
-    }
-    // Destroy the NDI finder
-    NDIlib_find_destroy(pNDI_find);
+    gst_ndi_finder_release();
 }
 
 GList*

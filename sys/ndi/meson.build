@@ -1,5 +1,6 @@
 ndi_sources = [
   'gstndi.c',
+  'gstndifinder.c',
   'gstndidevice.c',
   'gstndideviceprovider.c',
   'gstndiutil.c',
