@@ -20,7 +20,7 @@ G_DEFINE_TYPE(GstNdiDevice, gst_ndi_device, GST_TYPE_DEVICE);
 typedef struct _Device Device;
 struct _Device
  {
-    char* id;
+    gchar* id;
     gchar* p_ndi_name;
     GstNdiOutput output;
     GstNdiInput input;
@@ -85,15 +85,8 @@ static GstElement*
 gst_ndi_device_create_element(GstDevice* device, const gchar* name)
 {
     GstNdiDevice* self = GST_NDI_DEVICE(device);
-    GstElement* elem = NULL;
 
-    if (self->isVideo) {
-        elem = gst_element_factory_make("ndivideosrc", name);
-    }
-    else {
-        elem = gst_element_factory_make("ndiaudiosrc", name);
-    }
-
+    GstElement* elem = gst_element_factory_make(self->isVideo ? "ndivideosrc" : "ndiaudiosrc", name);
     if (elem) {
         g_object_set(elem, "device-path", self->device_path, NULL);
     }
@@ -460,7 +453,7 @@ gst_ndi_get_devices(void) {
     // Display all the sources.
     for (guint i = 0; i < devices->len; ++i) {
         Device* device = (Device*)g_ptr_array_index(devices, i);
-        GST_DEBUG("id = %u", device->id);
+        GST_DEBUG("id = %s", device->id);
 
         GstDevice* gstDevice = gst_ndi_device_provider_create_device(device->id, device->p_ndi_name, TRUE);
         list = g_list_append(list, gstDevice);
