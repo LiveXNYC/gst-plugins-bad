@@ -268,7 +268,7 @@ gst_ndi_video_src_get_caps(GstBaseSrc* src, GstCaps* filter)
     GstNdiVideoSrc* self = GST_NDI_VIDEO_SRC(src);
     GstCaps* caps = NULL;
 
-    if (self->caps == NULL) {
+    /*if (self->caps == NULL) {
         if (gst_ndi_video_src_acquire_input(self)) {
             GstBuffer* buf = g_async_queue_timeout_pop(self->queue, 5000000);
             if (buf) {
@@ -276,7 +276,7 @@ gst_ndi_video_src_get_caps(GstBaseSrc* src, GstCaps* filter)
                 gst_object_unref(buf);
             }
         }
-    }
+    }*/
 
     if (self->caps != NULL) {
         caps = gst_caps_copy(self->caps);
