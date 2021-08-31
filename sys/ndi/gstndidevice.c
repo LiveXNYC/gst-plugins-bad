@@ -186,6 +186,7 @@ gst_ndi_device_update(const char* id) {
 static void
 gst_ndi_device_create_finder() {
     if (!pNDI_find) {
+        GST_DEBUG("Creating Finder");
         is_finder_started = FALSE;
         is_finder_terminated = FALSE;
 
@@ -196,17 +197,24 @@ gst_ndi_device_create_finder() {
         pNDI_find = NDIlib_find_create_v2(&p_create_settings);
 
         if (!pNDI_find) {
+            GST_DEBUG("Creating Finder FAILED");
             return;
         }
 
+        GST_DEBUG("Creating Finder Thread");
         GError* error = NULL;
         finder_thread =
             g_thread_try_new("GstNdiFinder", thread_func, (gpointer)NULL, &error);
 
+        GST_DEBUG("Wait Signal");
         g_mutex_lock(&data_mutex);
         while (!is_finder_started)
             g_cond_wait(&data_cond, &data_mutex);
         g_mutex_unlock(&data_mutex);
+        GST_DEBUG("Signal Received");
+    }
+    else {
+        GST_DEBUG("Finder is created already");
     }
 }
 
@@ -214,6 +222,7 @@ static void
 gst_decklink_update_devices(void) {
     gst_ndi_device_create_finder();
     if (pNDI_find) {
+        GST_DEBUG("Upating devices");
         // Get the updated list of sources
         uint32_t no_sources = 0;
         g_mutex_lock(&list_lock);
@@ -231,9 +240,10 @@ static gpointer
  read_thread_func(gpointer data) {
     Device* self = (Device*)data;
 
-    GST_DEBUG("START THREAD");
+    GST_DEBUG("START NDI READ THREAD");
 
     if (self->input.pNDI_recv == NULL) {
+        GST_DEBUG("Create NDI receiver");
         NDIlib_recv_create_v3_t create;
         create.source_to_connect_to.p_url_address = self->id;
         create.source_to_connect_to.p_ndi_name = "";
@@ -272,9 +282,12 @@ static gpointer
             }
             NDIlib_recv_free_audio_v2(self->input.pNDI_recv, &audio_frame);
         }
+        else if (res == NDIlib_frame_type_error) {
+            GST_DEBUG("NDI receive ERROR");
+        }
     }
 
-    GST_DEBUG("STOP THREAD");
+    GST_DEBUG("STOP NDI READ THREAD");
 
     self->input.is_started = FALSE;
 
@@ -295,6 +308,7 @@ gst_ndi_acquire_input(const char* id, GstElement * src, gboolean is_audio) {
         return NULL;
     }
 
+    gboolean is_error = FALSE;
     GST_DEBUG("ACQUIRE. Total devices: %d", devices->len);
     for (guint i = 0; i < devices->len; ++i) {
         Device* device = (Device*)g_ptr_array_index(devices, i);
@@ -303,22 +317,36 @@ gst_ndi_acquire_input(const char* id, GstElement * src, gboolean is_audio) {
                 if (device->input.audiosrc == NULL) {
                     device->input.audiosrc = src;
                     device->input.is_audio_enabled = TRUE;
+                    GST_DEBUG("Audio Input is acquired");
+                }
+                else {
+                    GST_DEBUG("Audio Input is busy");
+                    is_error = TRUE;
                 }
             }
             else {
                 if (device->input.videosrc == NULL) {
                     device->input.videosrc = src;
                     device->input.is_video_enabled = TRUE;
+                    GST_DEBUG("Video Input is acquired");
+                }
+                else {
+                    GST_DEBUG("Video Input is busy");
+                    is_error = TRUE;
                 }
             }
 
-            if (device->input.read_thread == NULL) {
-                GError* error = NULL;
-                device->input.read_thread =
-                    g_thread_try_new("GstNdiInputReader", read_thread_func, (gpointer)device, &error);
+            if (!is_error) {
+                if (device->input.read_thread == NULL) {
+                    GST_DEBUG("Start input thread");
+                    device->input.is_read_terminated = FALSE;
+                    GError* error = NULL;
+                    device->input.read_thread =
+                        g_thread_try_new("GstNdiInputReader", read_thread_func, (gpointer)device, &error);
+                }
+                GST_DEBUG("ACQUIRE OK");
+                return &device->input;
             }
-            GST_DEBUG("ACQUIRE OK");
-            return &device->input;
         }
     }
     GST_DEBUG("ACQUIRE FAILED");
@@ -334,12 +362,14 @@ void
                 if (device->input.audiosrc == src) {
                     device->input.audiosrc = NULL;
                     device->input.is_audio_enabled = FALSE;
+                    GST_DEBUG("Audio Input is free");
                 }
             }
             else {
                 if (device->input.videosrc == src) {
                     device->input.videosrc = NULL;
                     device->input.is_video_enabled = FALSE;
+                    GST_DEBUG("Video Input is free");
                 }
             }
 
@@ -348,7 +378,9 @@ void
                 && !device->input.is_audio_enabled) {
                 GThread* read_thread = g_steal_pointer(&device->input.read_thread);
                 device->input.is_read_terminated = TRUE;
-
+                
+                GST_DEBUG("Stop input thread");
+                
                 g_thread_join(read_thread);
                 device->input.read_thread = NULL;
             }
@@ -358,8 +390,11 @@ void
 
 static gpointer
 thread_func(gpointer data) {
+    GST_DEBUG("Finder Thread Started");
+    
     g_mutex_lock(&data_mutex);
     NDIlib_find_wait_for_sources(pNDI_find, 1000);
+    GST_DEBUG("Finder Thread Send Signal");
     is_finder_started = TRUE;
     g_cond_signal(&data_cond);
     g_mutex_unlock(&data_mutex);
@@ -370,7 +405,9 @@ thread_func(gpointer data) {
         g_mutex_unlock(&list_lock);
         g_usleep(100000);
     }
-
+    
+    GST_DEBUG("Finder Thread Finished");
+    
     return NULL;
 }
 

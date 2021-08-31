@@ -318,7 +318,9 @@ static void gst_ndi_audio_src_acquire_input(GstNdiAudioSrc* self) {
     if (self->input == NULL) {
         GST_DEBUG_OBJECT(self, "Acquire Input");
         self->input = gst_ndi_acquire_input(self->device_path, GST_ELEMENT(self), TRUE);
-        self->input->got_audio_frame = gst_ndi_audio_src_got_frame;
+        if (self->input) {
+            self->input->got_audio_frame = gst_ndi_audio_src_got_frame;
+        }
     }
 }
 

@@ -50,7 +50,7 @@ static GstFlowReturn
 gst_ndi_video_src_create(GstPushSrc* pushsrc, GstBuffer** buffer);
 
 
-static void gst_ndi_video_src_acquire_input(GstNdiVideoSrc* self);
+static gboolean gst_ndi_video_src_acquire_input(GstNdiVideoSrc* self);
 static void gst_ndi_video_src_release_input(GstNdiVideoSrc* self);
 
 #define gst_ndi_video_src_parent_class parent_class
@@ -124,6 +124,8 @@ gst_ndi_video_src_finalize(GObject* object)
 {
     GstNdiVideoSrc* self = GST_NDI_VIDEO_SRC(object);
 
+    GST_DEBUG_OBJECT(self, "Finalize");
+    
     gst_ndi_video_src_release_input(self);
 
     if (self->device_name) {
@@ -180,20 +182,30 @@ gst_ndi_video_src_set_property(GObject* object, guint prop_id,
     }
 }
 
-static void
-gst_ndi_video_src_send_caps_event(GstNdiVideoSrc* self, const NDIlib_video_frame_v2_t* frame) {
+static GstCaps*
+gst_ndi_video_src_get_input_caps(GstNdiVideoSrc* self) {
     if (self->input == NULL) {
-        return;
+        return NULL;
     }
 
-    self->caps = gst_caps_new_simple("video/x-raw",
+    return gst_caps_new_simple("video/x-raw",
         "format", G_TYPE_STRING, gst_ndi_util_get_format(self->input->FourCC),
         "width", G_TYPE_INT, (int)self->input->xres,
         "height", G_TYPE_INT, (int)self->input->yres,
         "framerate", GST_TYPE_FRACTION, self->input->frame_rate_N, self->input->frame_rate_D,
         "interlace-mode", G_TYPE_STRING, gst_ndi_util_get_frame_format(self->input->frame_format_type),
         NULL);
+}
 
+static void
+gst_ndi_video_src_send_caps_event(GstNdiVideoSrc* self) {
+    if (self->input == NULL) {
+        return;
+    }
+    
+    if (self->caps == NULL) {
+        self->caps = gst_ndi_video_src_get_input_caps(self);
+    }
 
     GstPad* srcpad = GST_BASE_SRC_PAD(self);
     GstEvent* event = gst_pad_get_sticky_event(srcpad, GST_EVENT_CAPS, 0);
@@ -218,28 +230,13 @@ gst_ndi_video_src_start(GstBaseSrc* src)
     
     GST_DEBUG_OBJECT(self, "Src Start");
 
-    gst_ndi_video_src_acquire_input(self);
-    GstBuffer* buf = g_async_queue_timeout_pop(self->queue, 5000000);
-    if (buf) {
-        GstCaps* caps =  gst_caps_from_string("video/x-raw");
-        GstPad* srcpad = GST_BASE_SRC_PAD(src);
-        GstEvent* event = gst_pad_get_sticky_event(srcpad, GST_EVENT_CAPS, 0);
-        if (event) {
-            GstCaps* event_caps;
-            gst_event_parse_caps(event, &event_caps);
-            if (caps != event_caps) {
-                gst_event_unref(event);
-                event = gst_event_new_caps(caps);
-            }
+    if (gst_ndi_video_src_acquire_input(self)) {
+        GstBuffer* buf = g_async_queue_timeout_pop(self->queue, 5000000);
+        if (buf) {
+            gst_ndi_video_src_send_caps_event(self);
+            gst_object_unref(buf);
         }
-        else {
-            event = gst_event_new_caps(caps);
-        }
-        gst_pad_push_event(srcpad, event);
-        gst_caps_unref(caps);
-
     }
-
     return TRUE;
 }
 
@@ -271,6 +268,16 @@ gst_ndi_video_src_get_caps(GstBaseSrc* src, GstCaps* filter)
     GstNdiVideoSrc* self = GST_NDI_VIDEO_SRC(src);
     GstCaps* caps = NULL;
 
+    if (self->caps == NULL) {
+        if (gst_ndi_video_src_acquire_input(self)) {
+            GstBuffer* buf = g_async_queue_timeout_pop(self->queue, 5000000);
+            if (buf) {
+                self->caps = gst_ndi_video_src_get_input_caps(self);
+                gst_object_unref(buf);
+            }
+        }
+    }
+
     if (self->caps != NULL) {
         caps = gst_caps_copy(self->caps);
     }
@@ -284,17 +291,19 @@ gst_ndi_video_src_get_caps(GstBaseSrc* src, GstCaps* filter)
         gst_caps_unref(caps);
         caps = filtered;
     }
-
+    GST_DEBUG_OBJECT(self, "caps %" GST_PTR_FORMAT, caps);
     return caps;
 }
 
 static GstCaps*
 gst_ndi_video_src_fixate(GstBaseSrc* src, GstCaps* caps) {
+    GstNdiVideoSrc* self = GST_NDI_VIDEO_SRC(src);
+
     GstStructure* structure;
     GstCaps* fixated_caps;
     guint i;
 
-    GST_DEBUG("fixate caps %" GST_PTR_FORMAT, caps);
+    GST_DEBUG_OBJECT(self, "fixate caps %" GST_PTR_FORMAT, caps);
 
     fixated_caps = gst_caps_make_writable(caps);
 
@@ -353,16 +362,19 @@ gst_ndi_video_src_create(GstPushSrc* pushsrc, GstBuffer** buffer)
         *buffer = buf;
         return GST_FLOW_OK;
     }
+    else {
+        GST_DEBUG_OBJECT(self, "No buffer");
+    }
     return GST_FLOW_ERROR;
 }
 
 static void gst_ndi_video_src_got_frame(GstElement* ndi_device, gint8* buffer, guint size) {
     GstNdiVideoSrc* self = GST_NDI_VIDEO_SRC(ndi_device);
 
-    GST_DEBUG_OBJECT(self, "Got the frame");
+    GST_DEBUG_OBJECT(self, "Got a frame");
     if (self->caps == NULL) {
         //self->caps = gst_util_create_video_caps(&video_frame);
-        gst_ndi_video_src_send_caps_event(GST_BASE_SRC(self), NULL);
+        gst_ndi_video_src_send_caps_event(self);
         //GST_DEBUG_OBJECT(self, "caps %" GST_PTR_FORMAT, self->caps);
     }
 
@@ -372,16 +384,25 @@ static void gst_ndi_video_src_got_frame(GstElement* ndi_device, gint8* buffer, g
     g_async_queue_push(self->queue, buf);
 }
 
-static void
+static gboolean
 gst_ndi_video_src_acquire_input(GstNdiVideoSrc* self) {
     if (self->input == NULL) {
+        GST_DEBUG_OBJECT(self, "Acquire Input");
         self->input = gst_ndi_acquire_input(self->device_path, GST_ELEMENT(self), FALSE);
-        self->input->got_video_frame = gst_ndi_video_src_got_frame;
+        if (self->input) {
+            self->input->got_video_frame = gst_ndi_video_src_got_frame;
+        }
+        else {
+            GST_DEBUG_OBJECT(self, "Acquire Input FAILED");
+        }
     }
+
+    return (self->input != NULL);
 }
 
 static void gst_ndi_video_src_release_input(GstNdiVideoSrc* self) {
     if (self->input != NULL) {
+        GST_DEBUG_OBJECT(self, "Release Input");
         self->input->got_video_frame = NULL;
         gst_ndi_release_input(self->device_path, GST_ELEMENT(self), FALSE);
         self->input = NULL;
