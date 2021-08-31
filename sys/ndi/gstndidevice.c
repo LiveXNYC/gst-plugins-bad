@@ -210,7 +210,7 @@ static gpointer
     }
 
     self->input.is_started = TRUE;
-
+     /*
     while (!self->input.is_read_terminated) {
         NDIlib_audio_frame_v2_t audio_frame;
         NDIlib_video_frame_v2_t video_frame;
@@ -240,8 +240,33 @@ static gpointer
         else if (res == NDIlib_frame_type_error) {
             GST_DEBUG("NDI receive ERROR");
         }
-    }
-
+    }*/
+     while (!self->input.is_read_terminated) {
+         NDIlib_audio_frame_v2_t audio_frame;
+         NDIlib_video_frame_v2_t video_frame;
+         
+         NDIlib_framesync_capture_video(self->input.pNDI_recv,&video_frame,NDIlib_frame_format_type_progressive);
+         if(video_frame.p_data) {
+             self->input.xres = video_frame.xres;
+             self->input.yres = video_frame.yres;
+             self->input.frame_rate_N = video_frame.frame_rate_N;
+             self->input.frame_rate_D = video_frame.frame_rate_D;
+             self->input.frame_format_type = video_frame.frame_format_type;
+             self->input.FourCC = video_frame.FourCC;
+             gsize size = video_frame.xres * video_frame.yres * 2;
+             self->input.got_video_frame(self->input.videosrc, (gint8*)video_frame.p_data, size);
+         }
+         
+         NDIlib_framesync_capture_audio(self->input.pNDI_recv,&audio_frame,48000, 2, 3840);
+         
+         if(audio_frame.p_data) {
+             if (self->input.got_audio_frame) {
+                 self->input.got_audio_frame(self->input.audiosrc, (gint8*)audio_frame.p_data, audio_frame.no_samples * 8
+                     , audio_frame.channel_stride_in_bytes);
+             }
+         }
+         
+     }
     GST_DEBUG("STOP NDI READ THREAD");
 
     self->input.is_started = FALSE;
