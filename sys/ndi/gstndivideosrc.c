@@ -29,7 +29,6 @@ static GstStaticPadTemplate src_template = GST_STATIC_PAD_TEMPLATE("src",
     GST_PAD_ALWAYS,
     GST_STATIC_CAPS(SRC_TEMPLATE_CAPS));
 
-
 static void gst_ndi_video_src_finalize(GObject* object);
 static void gst_ndi_video_src_get_property(GObject* object, guint prop_id,
     GValue* value, GParamSpec* pspec);
@@ -48,7 +47,6 @@ static GstFlowReturn
 gst_ndi_video_src_fill(GstPushSrc* pushsrc, GstBuffer* buf);
 static GstFlowReturn
 gst_ndi_video_src_create(GstPushSrc* pushsrc, GstBuffer** buffer);
-
 
 static gboolean gst_ndi_video_src_acquire_input(GstNdiVideoSrc* self);
 static void gst_ndi_video_src_release_input(GstNdiVideoSrc* self);
@@ -137,6 +135,15 @@ gst_ndi_video_src_finalize(GObject* object)
     if (self->device_path) {
         g_free(self->device_path);
         self->device_path = NULL;
+    }
+
+    if (self->queue) {
+        while (g_async_queue_length(self->queue) > 0) {
+            GstBuffer* buffer = (GstBuffer*)g_async_queue_pop(self->queue);
+            gst_object_unref(buffer);
+            g_async_queue_remove(self->queue, buffer);
+        }
+        g_async_queue_unref(self->queue);
     }
 
     gst_ndi_device_unref();

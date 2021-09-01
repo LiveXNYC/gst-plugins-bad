@@ -41,10 +41,8 @@ static guint gst_ndi_audio_src_read(GstAudioSrc* asrc, gpointer data, guint leng
 static guint gst_ndi_audio_src_delay(GstAudioSrc* asrc);
 static void gst_ndi_audio_src_reset(GstAudioSrc* asrc);
 
-
 static void gst_ndi_audio_src_acquire_input(GstNdiAudioSrc* self);
 static void gst_ndi_audio_src_release_input(GstNdiAudioSrc* self);
-static gpointer thread_func(gpointer data);
 
 static void
 gst_ndi_audio_src_class_init(GstNdiAudioSrcClass* klass)
@@ -110,6 +108,7 @@ gst_ndi_audio_src_finalize(GObject* object)
     gst_ndi_audio_src_release_input(self);
 
     if (self->adapter) {
+        gst_adapter_clear(self->adapter);
         g_object_unref(self->adapter);
         self->adapter = NULL;
     }
