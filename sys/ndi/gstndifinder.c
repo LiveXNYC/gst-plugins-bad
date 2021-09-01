@@ -99,11 +99,13 @@ void gst_ndi_finder_release() {
     }
 
     if (finder->finder_thread) {
+        GST_DEBUG("Stopping Finder thread");
         GThread* thread = g_steal_pointer(&finder->finder_thread);
         finder->is_finder_terminated = TRUE;
 
         g_thread_join(thread);
     }
+    GST_DEBUG("Destroy Finder");
     // Destroy the NDI finder
     NDIlib_find_destroy(finder->pNDI_find);
     

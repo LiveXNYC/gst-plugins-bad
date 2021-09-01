@@ -64,7 +64,9 @@ struct _GstNdiOutput {
 };
 
 GstNdiInput * gst_ndi_device_acquire_input(const char* id, GstElement * src, gboolean is_audio);
-void         gst_ndi_device_release_input(const char* id, GstElement * src, gboolean is_audio);
+void          gst_ndi_device_release_input(const char* id, GstElement * src, gboolean is_audio);
+void          gst_ndi_device_ref();
+void          gst_ndi_device_unref();
 
 GType gst_ndi_device_get_type(void);
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(GstNdiDevice, gst_object_unref)

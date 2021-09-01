@@ -28,6 +28,8 @@ struct _Device
 };
 
 static GPtrArray * devices = NULL;
+static GMutex ref_mutex;
+static guint ref_counter = 0;
 
 static void gst_ndi_device_get_property(GObject* object,
     guint prop_id, GValue* value, GParamSpec* pspec);
@@ -38,6 +40,7 @@ static GstElement* gst_ndi_device_create_element(GstDevice* device,
     const gchar* name);
 static void gst_ndi_device_update(const NDIlib_source_t* source);
 static gpointer thread_func(gpointer data);
+static guint gst_ndi_device_get_ref_counter();
 
 static void
 gst_ndi_device_class_init(GstNdiDeviceClass* klass)
@@ -149,7 +152,7 @@ gst_ndi_device_update(const NDIlib_source_t* source) {
     gboolean isFind = FALSE;
     for (guint i = 0; i < devices->len; ++i) {
         Device* device = (Device*)g_ptr_array_index(devices, i);
-        if (device->id == source->p_url_address) {
+        if (strcmp(device->id, source->p_url_address) == 0) {
             isFind = TRUE;
             break;
         }
@@ -170,7 +173,7 @@ gst_ndi_device_create_finder() {
 }
 
 static void
-gst_decklink_update_devices(void) {
+gst_ndi_update_devices(void) {
     gst_ndi_device_create_finder();
 
     if (!devices) {
@@ -337,7 +340,7 @@ static gpointer
 
 GstNdiInput *
 gst_ndi_device_acquire_input(const char* id, GstElement * src, gboolean is_audio) {
-    gst_decklink_update_devices();
+    gst_ndi_update_devices();
 
     if (!devices) {
 
@@ -440,14 +443,34 @@ void
 }
 
 static void
-gst_ndi_device_release_finder() {
+gst_ndi_device_release_devices() {
+    if (gst_ndi_device_get_ref_counter() > 0) {
+        return;
+    }
+
+    GST_DEBUG("Release devices");
     gst_ndi_finder_release();
+
+    if (!devices) {
+        return;
+    }
+
+    while(devices->len > 0) {
+        Device* device = (Device*)g_ptr_array_index(devices, 0);
+        GST_DEBUG("Release device id = %s", device->id);
+        g_free(device->id);
+        g_free(device->p_ndi_name);
+        g_free(device);
+        g_ptr_array_remove(devices, device);
+    }
+    g_ptr_array_unref(devices);
+    devices = NULL;
 }
 
 GList*
 gst_ndi_device_get_devices(void) {
     GList* list = NULL;
-    gst_decklink_update_devices();
+    gst_ndi_update_devices();
 
     // Display all the sources.
     for (guint i = 0; i < devices->len; ++i) {
@@ -461,5 +484,31 @@ gst_ndi_device_get_devices(void) {
         list = g_list_append(list, gstDevice);
     }
 
+    gst_ndi_device_release_devices();
+
     return list;
+}
+
+void gst_ndi_device_ref() {
+    g_mutex_lock(&ref_mutex);
+    ++ref_counter;
+    GST_DEBUG("Ref counter = %u", ref_counter);
+    g_mutex_unlock(&ref_mutex);
+}
+
+void gst_ndi_device_unref() {
+    g_mutex_lock(&ref_mutex);
+    --ref_counter;
+    GST_DEBUG("Ref counter = %u", ref_counter);
+    g_mutex_unlock(&ref_mutex);
+    if (ref_counter == 0) gst_ndi_device_release_devices();
+}
+
+static guint
+gst_ndi_device_get_ref_counter() {
+    guint rc = 0;
+    g_mutex_lock(&ref_mutex);
+    rc = ref_counter;
+    g_mutex_unlock(&ref_mutex);
+    return rc;
 }

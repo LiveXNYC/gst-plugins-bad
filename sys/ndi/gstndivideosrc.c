@@ -105,6 +105,8 @@ gst_ndi_video_src_class_init(GstNdiVideoSrcClass* klass)
 static void
 gst_ndi_video_src_init(GstNdiVideoSrc* self)
 {
+    gst_ndi_device_ref();
+
     gst_base_src_set_format(GST_BASE_SRC(self), GST_FORMAT_TIME);
     gst_base_src_set_live(GST_BASE_SRC(self), TRUE);
     gst_base_src_set_do_timestamp(GST_BASE_SRC(self), TRUE);
@@ -136,6 +138,8 @@ gst_ndi_video_src_finalize(GObject* object)
         g_free(self->device_path);
         self->device_path = NULL;
     }
+
+    gst_ndi_device_unref();
 
     G_OBJECT_CLASS(parent_class)->finalize(object);
 }
