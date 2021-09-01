@@ -388,7 +388,7 @@ static gboolean
 gst_ndi_video_src_acquire_input(GstNdiVideoSrc* self) {
     if (self->input == NULL) {
         GST_DEBUG_OBJECT(self, "Acquire Input");
-        self->input = gst_ndi_acquire_input(self->device_path, GST_ELEMENT(self), FALSE);
+        self->input = gst_ndi_device_acquire_input(self->device_path, GST_ELEMENT(self), FALSE);
         if (self->input) {
             self->input->got_video_frame = gst_ndi_video_src_got_frame;
         }
@@ -404,7 +404,7 @@ static void gst_ndi_video_src_release_input(GstNdiVideoSrc* self) {
     if (self->input != NULL) {
         GST_DEBUG_OBJECT(self, "Release Input");
         self->input->got_video_frame = NULL;
-        gst_ndi_release_input(self->device_path, GST_ELEMENT(self), FALSE);
+        gst_ndi_device_release_input(self->device_path, GST_ELEMENT(self), FALSE);
         self->input = NULL;
     }
 }

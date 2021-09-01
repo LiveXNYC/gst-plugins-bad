@@ -24,7 +24,7 @@ struct _GstNdiDevice
     gboolean isVideo;
 };
 
-GList* gst_ndi_get_devices(void);
+GList* gst_ndi_device_get_devices(void);
 
 typedef struct _GstNdiInput GstNdiInput;
 struct _GstNdiInput {
@@ -63,8 +63,8 @@ struct _GstNdiOutput {
     GMutex lock;
 };
 
-GstNdiInput * gst_ndi_acquire_input(const char* id, GstElement * src, gboolean is_audio);
-void         gst_ndi_release_input(const char* id, GstElement * src, gboolean is_audio);
+GstNdiInput * gst_ndi_device_acquire_input(const char* id, GstElement * src, gboolean is_audio);
+void         gst_ndi_device_release_input(const char* id, GstElement * src, gboolean is_audio);
 
 GType gst_ndi_device_get_type(void);
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(GstNdiDevice, gst_object_unref)

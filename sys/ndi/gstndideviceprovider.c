@@ -32,5 +32,5 @@ gst_ndi_device_provider_init(GstNdiDeviceProvider* provider)
 
 static GList*
 gst_ndi_device_provider_probe(GstDeviceProvider* provider) {
-    return gst_ndi_get_devices();
+    return gst_ndi_device_get_devices();
 }

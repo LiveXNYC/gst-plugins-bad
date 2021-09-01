@@ -189,34 +189,35 @@ gst_decklink_update_devices(void) {
     }
 }
 
-static gpointer
- read_thread_func(gpointer data) {
-    Device* self = (Device*)data;
+static NDIlib_recv_instance_t
+gst_ndi_device_create_ndi_receiver(const gchar* url_adress, const gchar* name) {
+    GST_DEBUG("Create NDI receiver");
 
-    GST_DEBUG("START NDI READ THREAD");
+    NDIlib_recv_create_v3_t create;
+    create.source_to_connect_to.p_url_address = url_adress;
+    create.source_to_connect_to.p_ndi_name = "";
+    create.color_format = NDIlib_recv_color_format_UYVY_BGRA;
+    create.bandwidth = NDIlib_recv_bandwidth_highest;
+    create.allow_video_fields = FALSE;
+    create.p_ndi_recv_name = NULL;
 
-    if (self->input.pNDI_recv == NULL) {
-
-        GST_DEBUG("Create NDI receiver");
-
-        NDIlib_recv_create_v3_t create;
-        create.source_to_connect_to.p_url_address = self->id;
-        create.source_to_connect_to.p_ndi_name = self->p_ndi_name;
-        create.color_format = NDIlib_recv_color_format_UYVY_BGRA;
-        create.bandwidth = NDIlib_recv_bandwidth_highest;
-        self->input.pNDI_recv = NDIlib_recv_create_v3(&create);
-        
+    NDIlib_recv_instance_t recv = NDIlib_recv_create_v3(NULL/*&create*/);
+    if (recv) {
         NDIlib_source_t connection;
-        connection.p_ndi_name = self->p_ndi_name;
-        NDILib_recv_connect(self->input.pNDI_recv,&connection);
-        
-        
-        self->input.pNDI_recv_sync = NDIlib_framesync_create(self->input.pNDI_recv);
-        
+        connection.p_ip_address = url_adress;
+        connection.p_ndi_name = name;
+        NDIlib_recv_connect(recv, &connection);
     }
 
-    self->input.is_started = TRUE;
-     /*
+    return recv;
+}
+
+static void
+gst_ndi_device_capture(Device* self) {
+    if (self->input.pNDI_recv == NULL) {
+        self->input.pNDI_recv = gst_ndi_device_create_ndi_receiver(self->id, self->p_ndi_name);
+    }
+
     while (!self->input.is_read_terminated) {
         NDIlib_audio_frame_v2_t audio_frame;
         NDIlib_video_frame_v2_t video_frame;
@@ -246,52 +247,80 @@ static gpointer
         else if (res == NDIlib_frame_type_error) {
             GST_DEBUG("NDI receive ERROR");
         }
-    }*/
-     while (!self->input.is_read_terminated) {
-         NDIlib_audio_frame_v2_t audio_frame;
-         NDIlib_video_frame_v2_t video_frame;
-         
-         NDIlib_framesync_capture_video(self->input.pNDI_recv_sync,&video_frame,NDIlib_frame_format_type_progressive);
-         if(video_frame.p_data) {
-             self->input.xres = video_frame.xres;
-             self->input.yres = video_frame.yres;
-             self->input.frame_rate_N = video_frame.frame_rate_N;
-             self->input.frame_rate_D = video_frame.frame_rate_D;
-             self->input.frame_format_type = video_frame.frame_format_type;
-             self->input.FourCC = video_frame.FourCC;
-             gsize size = video_frame.xres * video_frame.yres * 2;
-             if(self->input.got_video_frame){
-                 self->input.got_video_frame(self->input.videosrc, (gint8*)video_frame.p_data, size);
-             }
-             NDIlib_framesync_free_video(self->input.pNDI_recv_sync, &video_frame);
-         }
-         
-         NDIlib_framesync_capture_audio(self->input.pNDI_recv_sync,&audio_frame,48000, 2, 3840);
-         
-         if(audio_frame.p_data) {
-             if (self->input.got_audio_frame) {
-                 self->input.got_audio_frame(self->input.audiosrc, (gint8*)audio_frame.p_data, audio_frame.no_samples * 8
-                     , audio_frame.channel_stride_in_bytes);
-             }
-             
-             NDIlib_framesync_free_audio(self->input.pNDI_recv_sync, &audio_frame);
-         }
-         
-     }
-    GST_DEBUG("STOP NDI READ THREAD");
-
-    self->input.is_started = FALSE;
+    }
 
     if (self->input.pNDI_recv != NULL) {
         NDIlib_recv_destroy(self->input.pNDI_recv);
         self->input.pNDI_recv = NULL;
     }
+}
+
+static void
+gst_ndi_device_capture_sync(Device* self) {
+    if (self->input.pNDI_recv_sync == NULL) {
+        self->input.pNDI_recv = gst_ndi_device_create_ndi_receiver(self->id, self->p_ndi_name);
+        self->input.pNDI_recv_sync = NDIlib_framesync_create(self->input.pNDI_recv);
+    }
+    while (!self->input.is_read_terminated) {
+        NDIlib_audio_frame_v2_t audio_frame;
+        NDIlib_video_frame_v2_t video_frame;
+
+        NDIlib_framesync_capture_video(self->input.pNDI_recv_sync, &video_frame, NDIlib_frame_format_type_progressive);
+        if (video_frame.p_data) {
+            self->input.xres = video_frame.xres;
+            self->input.yres = video_frame.yres;
+            self->input.frame_rate_N = video_frame.frame_rate_N;
+            self->input.frame_rate_D = video_frame.frame_rate_D;
+            self->input.frame_format_type = video_frame.frame_format_type;
+            self->input.FourCC = video_frame.FourCC;
+            gsize size = video_frame.xres * video_frame.yres * 2;
+            if (self->input.got_video_frame) {
+                self->input.got_video_frame(self->input.videosrc, (gint8*)video_frame.p_data, size);
+            }
+            NDIlib_framesync_free_video(self->input.pNDI_recv_sync, &video_frame);
+        }
+
+        NDIlib_framesync_capture_audio(self->input.pNDI_recv_sync, &audio_frame, 48000, 2, 1600);
+
+        if (audio_frame.p_data) {
+            if (self->input.got_audio_frame) {
+                self->input.got_audio_frame(self->input.audiosrc, (gint8*)audio_frame.p_data, audio_frame.no_samples * 8
+                    , audio_frame.channel_stride_in_bytes);
+            }
+
+            NDIlib_framesync_free_audio(self->input.pNDI_recv_sync, &audio_frame);
+        }
+        g_usleep(33000);
+    }
+    if (self->input.pNDI_recv_sync == NULL) {
+        NDIlib_framesync_destroy(self->input.pNDI_recv_sync);
+        self->input.pNDI_recv_sync = NULL;
+    }
+    if (self->input.pNDI_recv != NULL) {
+        NDIlib_recv_destroy(self->input.pNDI_recv);
+        self->input.pNDI_recv = NULL;
+    }
+}
+
+static gpointer
+ device_capture_thread_func(gpointer data) {
+    Device* self = (Device*)data;
+
+    GST_DEBUG("START NDI READ THREAD");
+
+    self->input.is_started = TRUE;
+    
+    gst_ndi_device_capture(self);
+
+    self->input.is_started = FALSE;
+    
+    GST_DEBUG("STOP NDI READ THREAD");
 
     return NULL;
 }
 
 GstNdiInput *
-gst_ndi_acquire_input(const char* id, GstElement * src, gboolean is_audio) {
+gst_ndi_device_acquire_input(const char* id, GstElement * src, gboolean is_audio) {
     gst_decklink_update_devices();
 
     if (!devices) {
@@ -342,7 +371,7 @@ gst_ndi_acquire_input(const char* id, GstElement * src, gboolean is_audio) {
                     device->input.is_read_terminated = FALSE;
                     GError* error = NULL;
                     device->input.read_thread =
-                        g_thread_try_new("GstNdiInputReader", read_thread_func, (gpointer)device, &error);
+                        g_thread_try_new("GstNdiInputReader", device_capture_thread_func, (gpointer)device, &error);
                 }
 
                 GST_DEBUG("ACQUIRE OK");
@@ -358,7 +387,7 @@ gst_ndi_acquire_input(const char* id, GstElement * src, gboolean is_audio) {
 }
 
 void
- gst_ndi_release_input(const char* id, GstElement * src, gboolean is_audio) {
+ gst_ndi_device_release_input(const char* id, GstElement * src, gboolean is_audio) {
     for (guint i = 0; i < devices->len; ++i) {
         Device* device = (Device*)g_ptr_array_index(devices, i);
         if (strcmp(device->id, id) == 0) {
@@ -400,7 +429,7 @@ gst_ndi_device_release_finder() {
 }
 
 GList*
-gst_ndi_get_devices(void) {
+gst_ndi_device_get_devices(void) {
     GList* list = NULL;
     gst_decklink_update_devices();
 
