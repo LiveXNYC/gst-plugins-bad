@@ -213,6 +213,31 @@ gst_ndi_device_create_ndi_receiver(const gchar* url_adress, const gchar* name) {
 }
 
 static void
+gst_ndi_device_update_video_input(Device* self, NDIlib_video_frame_v2_t* video_frame) {
+    self->input.xres = video_frame->xres;
+    self->input.yres = video_frame->yres;
+    self->input.frame_rate_N = video_frame->frame_rate_N;
+    self->input.frame_rate_D = video_frame->frame_rate_D;
+    self->input.frame_format_type = video_frame->frame_format_type;
+    self->input.FourCC = video_frame->FourCC;
+    if (self->input.got_video_frame) {
+        // TODO: get actual size 
+        gsize size = video_frame->xres * video_frame->yres * 2;
+        self->input.got_video_frame(self->input.videosrc, (gint8*)video_frame->p_data, size);
+    }
+}
+
+static void
+gst_ndi_device_update_audio_input(Device* self, NDIlib_audio_frame_v2_t* audio_frame) {
+    self->input.channels = audio_frame->no_channels;
+    self->input.sample_rate = audio_frame->sample_rate;
+    if (self->input.got_audio_frame) {
+        self->input.got_audio_frame(self->input.audiosrc, (gint8*)audio_frame->p_data, audio_frame->no_samples * 8
+            , audio_frame->channel_stride_in_bytes);
+    }
+}
+
+static void
 gst_ndi_device_capture(Device* self) {
     if (self->input.pNDI_recv == NULL) {
         self->input.pNDI_recv = gst_ndi_device_create_ndi_receiver(self->id, self->p_ndi_name);
@@ -227,25 +252,11 @@ gst_ndi_device_capture(Device* self) {
         NDIlib_video_frame_v2_t video_frame;
         NDIlib_frame_type_e res = NDIlib_recv_capture_v2(self->input.pNDI_recv, &video_frame, &audio_frame, NULL, 5000);
         if (res == NDIlib_frame_type_video) {
-            self->input.xres = video_frame.xres;
-            self->input.yres = video_frame.yres;
-            self->input.frame_rate_N = video_frame.frame_rate_N;
-            self->input.frame_rate_D = video_frame.frame_rate_D;
-            self->input.frame_format_type = video_frame.frame_format_type;
-            self->input.FourCC = video_frame.FourCC;
-            if (self->input.got_video_frame) {
-                // TODO: get actual size 
-                gsize size = video_frame.xres * video_frame.yres * 2;
-                self->input.got_video_frame(self->input.videosrc, (gint8*)video_frame.p_data, size);
-
-            }
+            gst_ndi_device_update_video_input(self, &video_frame);
             NDIlib_recv_free_video_v2(self->input.pNDI_recv, &video_frame);
         }
         else if (res == NDIlib_frame_type_audio) {
-            if (self->input.got_audio_frame) {
-                self->input.got_audio_frame(self->input.audiosrc, (gint8*)audio_frame.p_data, audio_frame.no_samples * 8
-                    , audio_frame.channel_stride_in_bytes);
-            }
+            gst_ndi_device_update_audio_input(self, &audio_frame);
             NDIlib_recv_free_audio_v2(self->input.pNDI_recv, &audio_frame);
         }
         else if (res == NDIlib_frame_type_error) {
@@ -281,29 +292,17 @@ gst_ndi_device_capture_sync(Device* self) {
 
         NDIlib_framesync_capture_video(self->input.pNDI_recv_sync, &video_frame, NDIlib_frame_format_type_progressive);
         if (video_frame.p_data) {
-            self->input.xres = video_frame.xres;
-            self->input.yres = video_frame.yres;
-            self->input.frame_rate_N = video_frame.frame_rate_N;
-            self->input.frame_rate_D = video_frame.frame_rate_D;
-            self->input.frame_format_type = video_frame.frame_format_type;
-            self->input.FourCC = video_frame.FourCC;
-            gsize size = video_frame.xres * video_frame.yres * 2;
-            if (self->input.got_video_frame) {
-                self->input.got_video_frame(self->input.videosrc, (gint8*)video_frame.p_data, size);
-            }
+            gst_ndi_device_update_video_input(self, &video_frame);
             NDIlib_framesync_free_video(self->input.pNDI_recv_sync, &video_frame);
         }
 
         NDIlib_framesync_capture_audio(self->input.pNDI_recv_sync, &audio_frame, 48000, 2, 1600);
 
         if (audio_frame.p_data) {
-            if (self->input.got_audio_frame) {
-                self->input.got_audio_frame(self->input.audiosrc, (gint8*)audio_frame.p_data, audio_frame.no_samples * 8
-                    , audio_frame.channel_stride_in_bytes);
-            }
-
+            gst_ndi_device_update_audio_input(self, &audio_frame);
             NDIlib_framesync_free_audio(self->input.pNDI_recv_sync, &audio_frame);
         }
+
         g_usleep(33000);
     }
 
