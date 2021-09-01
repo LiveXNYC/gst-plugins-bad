@@ -216,6 +216,10 @@ static void
 gst_ndi_device_capture(Device* self) {
     if (self->input.pNDI_recv == NULL) {
         self->input.pNDI_recv = gst_ndi_device_create_ndi_receiver(self->id, self->p_ndi_name);
+
+        if (self->input.pNDI_recv == NULL) {
+            return;
+        }
     }
 
     while (!self->input.is_read_terminated) {
@@ -259,8 +263,18 @@ static void
 gst_ndi_device_capture_sync(Device* self) {
     if (self->input.pNDI_recv_sync == NULL) {
         self->input.pNDI_recv = gst_ndi_device_create_ndi_receiver(self->id, self->p_ndi_name);
+        if (self->input.pNDI_recv == NULL) {
+            return;
+        }
+
         self->input.pNDI_recv_sync = NDIlib_framesync_create(self->input.pNDI_recv);
+        if (self->input.pNDI_recv_sync == NULL) {
+            NDIlib_recv_destroy(self->input.pNDI_recv);
+            self->input.pNDI_recv = NULL;
+            return;
+        }
     }
+    
     while (!self->input.is_read_terminated) {
         NDIlib_audio_frame_v2_t audio_frame;
         NDIlib_video_frame_v2_t video_frame;
@@ -292,10 +306,12 @@ gst_ndi_device_capture_sync(Device* self) {
         }
         g_usleep(33000);
     }
+
     if (self->input.pNDI_recv_sync == NULL) {
         NDIlib_framesync_destroy(self->input.pNDI_recv_sync);
         self->input.pNDI_recv_sync = NULL;
     }
+    
     if (self->input.pNDI_recv != NULL) {
         NDIlib_recv_destroy(self->input.pNDI_recv);
         self->input.pNDI_recv = NULL;
@@ -311,6 +327,7 @@ static gpointer
     self->input.is_started = TRUE;
     
     gst_ndi_device_capture(self);
+    //gst_ndi_device_capture_sync(self);
 
     self->input.is_started = FALSE;
     
