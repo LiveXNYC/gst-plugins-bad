@@ -41,6 +41,7 @@ static GstElement* gst_ndi_device_create_element(GstDevice* device,
 static void gst_ndi_device_update(const NDIlib_source_t* source);
 static gpointer thread_func(gpointer data);
 static guint gst_ndi_device_get_ref_counter();
+static void gst_ndi_device_remove_device(Device* device);
 
 static void
 gst_ndi_device_class_init(GstNdiDeviceClass* klass)
@@ -148,22 +149,61 @@ gst_ndi_device_provider_create_device(const char* id, const char* name, gboolean
 }
 
 static void
-gst_ndi_device_update(const NDIlib_source_t* source) {
-    gboolean isFind = FALSE;
-    for (guint i = 0; i < devices->len; ++i) {
+gst_ndi_device_update(const NDIlib_source_t* p_sources, uint32_t no_sources) {
+    if (devices == NULL) {
+        devices = g_ptr_array_new();
+    }
+
+    if (p_sources == NULL || no_sources == 0) {
+        return;
+    }
+
+    GST_DEBUG("Upating devices");
+
+    for (guint i = 0; i < devices->len; ) {
         Device* device = (Device*)g_ptr_array_index(devices, i);
-        if (strcmp(device->id, source->p_url_address) == 0) {
-            isFind = TRUE;
-            break;
+        gboolean isFind = FALSE;
+        for (uint32_t j = 0; j < no_sources; j++) {
+            NDIlib_source_t* source = p_sources + j;
+            if (strcmp(device->id, source->p_url_address) == 0) {
+                isFind = TRUE;
+                break;
+            }
+        }
+        ++i;
+        if (!isFind) {
+            GST_DEBUG("Remove device id = %s, name = %s", device->id, device->p_ndi_name);
+            gst_ndi_device_remove_device(device);
+            i = 0;
         }
     }
 
-    if (!isFind) {
-        Device* device = g_new0(Device, 1);
-        device->id = g_strdup(source->p_url_address);
-        device->p_ndi_name = g_strdup(source->p_ndi_name);
-        g_mutex_init(&device->input.lock);
-        g_ptr_array_add(devices, device);
+    for (uint32_t i = 0; i < no_sources; i++) {
+        NDIlib_source_t* source = p_sources + i;
+        
+        gboolean isFind = FALSE;
+        for (guint j = 0; j < devices->len; ++j) {
+            Device* device = (Device*)g_ptr_array_index(devices, j);
+            if (strcmp(device->id, source->p_url_address) == 0) {
+                isFind = TRUE;
+
+                if (strcmp(device->p_ndi_name, source->p_ndi_name) != 0) {
+                    if (device->p_ndi_name) {
+                        g_free(device->p_ndi_name);
+                    }
+                    device->p_ndi_name = g_strdup(source->p_ndi_name);
+                }
+            }
+        }
+
+        if (!isFind) {
+            Device* device = g_new0(Device, 1);
+            device->id = g_strdup(source->p_url_address);
+            device->p_ndi_name = g_strdup(source->p_ndi_name);
+            g_mutex_init(&device->input.lock);
+            g_ptr_array_add(devices, device);
+            GST_DEBUG("Add device id = %s, name = %s", device->id, device->p_ndi_name);
+        }
     }
 }
 
@@ -176,20 +216,9 @@ static void
 gst_ndi_update_devices(void) {
     gst_ndi_device_create_finder();
 
-    if (!devices) {
-        devices = g_ptr_array_new();
-    }
-
     uint32_t no_sources = 0;
     const NDIlib_source_t* p_sources = gst_ndi_finder_get_sources(&no_sources);
-    if (p_sources != NULL) {
-        GST_DEBUG("Upating devices");
-
-        // Display all the sources.
-        for (uint32_t i = 0; i < no_sources; i++) {
-            gst_ndi_device_update(&p_sources[i]);
-        }
-    }
+    gst_ndi_device_update(p_sources, no_sources);
 }
 
 static NDIlib_recv_instance_t
@@ -443,6 +472,15 @@ void
 }
 
 static void
+gst_ndi_device_remove_device(Device* device) {
+    g_free(device->id);
+    g_free(device->p_ndi_name);
+    g_free(device);
+    g_ptr_array_remove(devices, device);
+}
+
+
+static void
 gst_ndi_device_release_devices() {
     if (gst_ndi_device_get_ref_counter() > 0) {
         return;
@@ -455,13 +493,10 @@ gst_ndi_device_release_devices() {
         return;
     }
 
-    while(devices->len > 0) {
+    while (devices->len > 0) {
         Device* device = (Device*)g_ptr_array_index(devices, 0);
         GST_DEBUG("Release device id = %s", device->id);
-        g_free(device->id);
-        g_free(device->p_ndi_name);
-        g_free(device);
-        g_ptr_array_remove(devices, device);
+        gst_ndi_device_remove_device(device);
     }
     g_ptr_array_unref(devices);
     devices = NULL;
@@ -476,7 +511,6 @@ gst_ndi_device_get_devices(void) {
     for (guint i = 0; i < devices->len; ++i) {
         Device* device = (Device*)g_ptr_array_index(devices, i);
         GST_DEBUG("id = %s", device->id);
-
         GstDevice* gstDevice = gst_ndi_device_provider_create_device(device->id, device->p_ndi_name, TRUE);
         list = g_list_append(list, gstDevice);
 
