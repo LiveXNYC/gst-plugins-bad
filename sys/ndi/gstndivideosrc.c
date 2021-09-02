@@ -360,8 +360,7 @@ static void gst_ndi_video_src_got_frame(GstElement* ndi_device, gint8* buffer, g
     GST_DEBUG_OBJECT(self, "Got a frame");
     if (self->caps == NULL) {
         self->caps = gst_ndi_video_src_get_input_caps(self);
-        gst_ndi_device_src_send_caps_event(GST_BASE_SRC(self), self->caps);
-        //GST_DEBUG_OBJECT(self, "caps %" GST_PTR_FORMAT, self->caps);
+        GST_DEBUG_OBJECT(self, "caps %" GST_PTR_FORMAT, self->caps);
     }
 
     GstBuffer* buf = gst_buffer_new_allocate(NULL, size, NULL);

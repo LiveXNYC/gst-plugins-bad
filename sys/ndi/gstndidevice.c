@@ -434,13 +434,14 @@ gst_ndi_device_acquire_input(const char* id, GstElement * src, gboolean is_audio
     
     return NULL;
 }
+
 void
-gst_ndi_device_src_send_caps_event(GstBaseSrc* element, GstCaps* caps) {
-    if (element == NULL) {
+gst_ndi_device_src_send_caps_event(GstBaseSrc* src, GstCaps* caps) {
+    if (src == NULL) {
         return;
     }
 
-    GstPad* srcpad = GST_BASE_SRC_PAD(element);
+    GstPad* srcpad = GST_BASE_SRC_PAD(src);
     GstEvent* event = gst_pad_get_sticky_event(srcpad, GST_EVENT_CAPS, 0);
     if (event) {
         GstCaps* event_caps;
@@ -455,6 +456,7 @@ gst_ndi_device_src_send_caps_event(GstBaseSrc* element, GstCaps* caps) {
     }
     gst_pad_push_event(srcpad, event);
 }
+
 void
  gst_ndi_device_release_input(const char* id, GstElement * src, gboolean is_audio) {
     for (guint i = 0; i < devices->len; ++i) {
