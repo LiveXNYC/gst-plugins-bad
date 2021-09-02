@@ -263,9 +263,10 @@ static void
 gst_ndi_device_update_audio_input(Device* self, NDIlib_audio_frame_v2_t* audio_frame) {
     self->input.channels = audio_frame->no_channels;
     self->input.sample_rate = audio_frame->sample_rate;
+    int stride = audio_frame->no_channels == 1 ? 0 :audio_frame->channel_stride_in_bytes;
     if (self->input.got_audio_frame) {
-        self->input.got_audio_frame(self->input.audiosrc, (gint8*)audio_frame->p_data, audio_frame->no_samples * 8
-            , audio_frame->channel_stride_in_bytes);
+        self->input.got_audio_frame(self->input.audiosrc, (gint8*)audio_frame->p_data, audio_frame->no_samples * sizeof(float) * audio_frame->no_channels
+            , stride);
     }
 }
 
@@ -328,7 +329,7 @@ gst_ndi_device_capture_sync(Device* self) {
             NDIlib_framesync_free_video(self->input.pNDI_recv_sync, &video_frame);
         }
 
-        NDIlib_framesync_capture_audio(self->input.pNDI_recv_sync, &audio_frame, 48000, 2, 1600);
+        NDIlib_framesync_capture_audio(self->input.pNDI_recv_sync, &audio_frame, 0, 0, 0);
 
         if (audio_frame.p_data) {
             gst_ndi_device_update_audio_input(self, &audio_frame);
@@ -433,7 +434,27 @@ gst_ndi_device_acquire_input(const char* id, GstElement * src, gboolean is_audio
     
     return NULL;
 }
+void
+gst_ndi_device_src_send_caps_event(GstBaseSrc* element, GstCaps* caps) {
+    if (element == NULL) {
+        return;
+    }
 
+    GstPad* srcpad = GST_BASE_SRC_PAD(element);
+    GstEvent* event = gst_pad_get_sticky_event(srcpad, GST_EVENT_CAPS, 0);
+    if (event) {
+        GstCaps* event_caps;
+        gst_event_parse_caps(event, &event_caps);
+        if (caps != event_caps) {
+            gst_event_unref(event);
+            event = gst_event_new_caps(caps);
+        }
+    }
+    else {
+        event = gst_event_new_caps(caps);
+    }
+    gst_pad_push_event(srcpad, event);
+}
 void
  gst_ndi_device_release_input(const char* id, GstElement * src, gboolean is_audio) {
     for (guint i = 0; i < devices->len; ++i) {

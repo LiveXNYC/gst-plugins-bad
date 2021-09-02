@@ -208,32 +208,6 @@ gst_ndi_video_src_get_input_caps(GstNdiVideoSrc* self) {
         NULL);
 }
 
-static void
-gst_ndi_video_src_send_caps_event(GstNdiVideoSrc* self) {
-    if (self->input == NULL) {
-        return;
-    }
-    
-    if (self->caps == NULL) {
-        self->caps = gst_ndi_video_src_get_input_caps(self);
-    }
-
-    GstPad* srcpad = GST_BASE_SRC_PAD(self);
-    GstEvent* event = gst_pad_get_sticky_event(srcpad, GST_EVENT_CAPS, 0);
-    if (event) {
-        GstCaps* event_caps;
-        gst_event_parse_caps(event, &event_caps);
-        if (self->caps != event_caps) {
-            gst_event_unref(event);
-            event = gst_event_new_caps(self->caps);
-        }
-    }
-    else {
-        event = gst_event_new_caps(self->caps);
-    }
-    gst_pad_push_event(srcpad, event);
-}
-
 static gboolean
 gst_ndi_video_src_start(GstBaseSrc* src)
 {
@@ -244,7 +218,8 @@ gst_ndi_video_src_start(GstBaseSrc* src)
     if (gst_ndi_video_src_acquire_input(self)) {
         GstBuffer* buf = g_async_queue_timeout_pop(self->queue, 5000000);
         if (buf) {
-            gst_ndi_video_src_send_caps_event(self);
+            self->caps = gst_ndi_video_src_get_input_caps(self);
+            gst_ndi_device_src_send_caps_event(GST_BASE_SRC(self), self->caps);
             gst_object_unref(buf);
         }
     }
@@ -384,8 +359,8 @@ static void gst_ndi_video_src_got_frame(GstElement* ndi_device, gint8* buffer, g
 
     GST_DEBUG_OBJECT(self, "Got a frame");
     if (self->caps == NULL) {
-        //self->caps = gst_util_create_video_caps(&video_frame);
-        gst_ndi_video_src_send_caps_event(self);
+        self->caps = gst_ndi_video_src_get_input_caps(self);
+        gst_ndi_device_src_send_caps_event(GST_BASE_SRC(self), self->caps);
         //GST_DEBUG_OBJECT(self, "caps %" GST_PTR_FORMAT, self->caps);
     }
 

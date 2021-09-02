@@ -292,8 +292,14 @@ void gst_ndi_audio_src_got_frame(GstElement* ndi_device, gint8* buffer, guint si
 
     GST_DEBUG_OBJECT(self, "Got frame %u", size);
     if (self->caps == NULL) {
-        //self->caps = gst_util_create_audio_caps(&audio_frame);
-        //GST_DEBUG_OBJECT(self, "caps %" GST_PTR_FORMAT, self->caps);
+        self->caps = gst_caps_new_simple("audio/x-raw",
+                                         "format", G_TYPE_STRING, "F32LE",
+                                         "channels", G_TYPE_INT, (int)self->input->channels,
+                                         "rate", G_TYPE_INT, (int)self->input->sample_rate,
+                                         NULL);
+        
+        //gst_ndi_device_src_send_caps_event(GST_BASE_SRC(self), self->caps);
+        GST_DEBUG_OBJECT(self, "caps %" GST_PTR_FORMAT, self->caps);
     }
 
     GstBuffer* tmp = gst_buffer_new_allocate(NULL, size, NULL);
