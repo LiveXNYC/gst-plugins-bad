@@ -462,8 +462,21 @@ gst_ndi_device_src_send_caps_event(GstBaseSrc* src, GstCaps* caps) {
     gst_pad_push_event(srcpad, event);
 }
 
+static void 
+gst_ndi_device_stop_capture_thread(Device* device) {
+    if (device->input.capture_thread) {
+        GThread* capture_thread = g_steal_pointer(&device->input.capture_thread);
+        device->input.is_capture_terminated = TRUE;
+
+        GST_DEBUG("Stop input thread");
+
+        g_thread_join(capture_thread);
+        device->input.capture_thread = NULL;
+    }
+}
+
 void
- gst_ndi_device_release_input(const char* id, GstElement * src, gboolean is_audio) {
+gst_ndi_device_release_input(const char* id, GstElement * src, gboolean is_audio) {
     for (guint i = 0; i < devices->len; ++i) {
         Device* device = (Device*)g_ptr_array_index(devices, i);
         if (strcmp(device->id, id) == 0) {
@@ -484,16 +497,9 @@ void
                 }
             }
 
-            if (device->input.capture_thread 
-                && !device->input.is_video_enabled
+            if (!device->input.is_video_enabled
                 && !device->input.is_audio_enabled) {
-                GThread* capture_thread = g_steal_pointer(&device->input.capture_thread);
-                device->input.is_capture_terminated = TRUE;
-                
-                GST_DEBUG("Stop input thread");
-                
-                g_thread_join(capture_thread);
-                device->input.capture_thread = NULL;
+                gst_ndi_device_stop_capture_thread(device);
             }
         }
     }
@@ -501,6 +507,11 @@ void
 
 static void
 gst_ndi_device_remove_device(Device* device) {
+    if (device == NULL) {
+        return;
+    }
+
+    gst_ndi_device_stop_capture_thread(device);
     g_free(device->id);
     g_free(device->p_ndi_name);
     g_free(device);
