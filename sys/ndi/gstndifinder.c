@@ -25,7 +25,7 @@ thread_func(gpointer data) {
     GST_DEBUG("Finder Thread Started");
 
     g_mutex_lock(&finder->data_mutex);
-    NDIlib_find_wait_for_sources(finder->pNDI_find, 1000);
+    NDIlib_find_wait_for_sources(finder->pNDI_find, 500);
 
     GST_DEBUG("Finder Thread Send Signal");
 
