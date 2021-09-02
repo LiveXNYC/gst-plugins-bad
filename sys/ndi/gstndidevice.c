@@ -155,6 +155,11 @@ gst_ndi_device_update(const NDIlib_source_t* p_sources, uint32_t no_sources) {
     }
 
     if (p_sources == NULL || no_sources == 0) {
+        while (devices->len > 0) {
+            Device* device = (Device*)g_ptr_array_index(devices, 0);
+            GST_DEBUG("Release device id = %s", device->id);
+            gst_ndi_device_remove_device(device);
+        }
         return;
     }
 
