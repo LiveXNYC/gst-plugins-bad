@@ -28,38 +28,35 @@ GList* gst_ndi_device_get_devices(void);
 
 typedef struct _GstNdiInput GstNdiInput;
 struct _GstNdiInput {
-    /* Everything below protected by mutex */
     GMutex lock;
-    GThread* read_thread;
-    gboolean is_read_terminated;
-
-    NDIlib_recv_instance_t pNDI_recv;
-    NDIlib_framesync_instance_t pNDI_recv_sync;
-    /* Set by the video source */
-    void (*got_video_frame) (GstElement* ndi_device, gint8* buffer, guint size);
-
-    /* Set by the audio source */
-    void (*got_audio_frame) (GstElement* ndi_device, gint8* buffer, guint size, guint stride);
+    GThread* capture_thread;
+    gboolean is_capture_terminated;
 
     gboolean is_started;
-
-    GstElement* audiosrc;
-    gboolean is_audio_enabled;
+    NDIlib_recv_instance_t pNDI_recv;
+    NDIlib_framesync_instance_t pNDI_recv_sync;
+    
+    /* Set by the video source */
+    void (*got_video_frame) (GstElement* ndi_device, gint8* buffer, guint size);
     GstElement* videosrc;
     gboolean is_video_enabled;
-
-    int xres, yres;
-    int frame_rate_N, frame_rate_D;
+    int xres;
+    int yres;
+    int frame_rate_N;
+    int frame_rate_D;
     NDIlib_frame_format_type_e frame_format_type;
     NDIlib_FourCC_video_type_e FourCC;
 
+    /* Set by the audio source */
+    void (*got_audio_frame) (GstElement* ndi_device, gint8* buffer, guint size, guint stride);
+    GstElement* audiosrc;
+    gboolean is_audio_enabled;
     guint channels;
     guint sample_rate;
 };
 
 typedef struct _GstNdiOutput GstNdiOutput;
 struct _GstNdiOutput {
-    /* Everything below protected by mutex */
     GMutex lock;
 };
 

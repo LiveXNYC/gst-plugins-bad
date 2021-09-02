@@ -38,7 +38,7 @@ static void gst_ndi_device_set_property(GObject* object,
 static void gst_ndi_device_finalize(GObject* object);
 static GstElement* gst_ndi_device_create_element(GstDevice* device,
     const gchar* name);
-static void gst_ndi_device_update(const NDIlib_source_t* source);
+static void gst_ndi_device_update(const NDIlib_source_t* source, uint32_t no_sources);
 static gpointer thread_func(gpointer data);
 static guint gst_ndi_device_get_ref_counter();
 static void gst_ndi_device_remove_device(Device* device);
@@ -164,7 +164,7 @@ gst_ndi_device_update(const NDIlib_source_t* p_sources, uint32_t no_sources) {
         Device* device = (Device*)g_ptr_array_index(devices, i);
         gboolean isFind = FALSE;
         for (uint32_t j = 0; j < no_sources; j++) {
-            NDIlib_source_t* source = p_sources + j;
+            const NDIlib_source_t* source = p_sources + j;
             if (strcmp(device->id, source->p_url_address) == 0) {
                 isFind = TRUE;
                 break;
@@ -179,7 +179,7 @@ gst_ndi_device_update(const NDIlib_source_t* p_sources, uint32_t no_sources) {
     }
 
     for (uint32_t i = 0; i < no_sources; i++) {
-        NDIlib_source_t* source = p_sources + i;
+        const NDIlib_source_t* source = p_sources + i;
         
         gboolean isFind = FALSE;
         for (guint j = 0; j < devices->len; ++j) {
@@ -279,7 +279,7 @@ gst_ndi_device_capture(Device* self) {
         }
     }
 
-    while (!self->input.is_read_terminated) {
+    while (!self->input.is_capture_terminated) {
         NDIlib_audio_frame_v2_t audio_frame;
         NDIlib_video_frame_v2_t video_frame;
         NDIlib_frame_type_e res = NDIlib_recv_capture_v2(self->input.pNDI_recv, &video_frame, &audio_frame, NULL, 5000);
@@ -318,7 +318,7 @@ gst_ndi_device_capture_sync(Device* self) {
         }
     }
     
-    while (!self->input.is_read_terminated) {
+    while (!self->input.is_capture_terminated) {
         NDIlib_audio_frame_v2_t audio_frame;
         NDIlib_video_frame_v2_t video_frame;
 
@@ -412,13 +412,13 @@ gst_ndi_device_acquire_input(const char* id, GstElement * src, gboolean is_audio
             }
 
             if (!is_error) {
-                if (device->input.read_thread == NULL) {
+                if (device->input.capture_thread == NULL) {
 
                     GST_DEBUG("Start input thread");
 
-                    device->input.is_read_terminated = FALSE;
+                    device->input.is_capture_terminated = FALSE;
                     GError* error = NULL;
-                    device->input.read_thread =
+                    device->input.capture_thread =
                         g_thread_try_new("GstNdiInputReader", device_capture_thread_func, (gpointer)device, &error);
                 }
 
@@ -456,16 +456,16 @@ void
                 }
             }
 
-            if (device->input.read_thread 
+            if (device->input.capture_thread 
                 && !device->input.is_video_enabled
                 && !device->input.is_audio_enabled) {
-                GThread* read_thread = g_steal_pointer(&device->input.read_thread);
-                device->input.is_read_terminated = TRUE;
+                GThread* capture_thread = g_steal_pointer(&device->input.capture_thread);
+                device->input.is_capture_terminated = TRUE;
                 
                 GST_DEBUG("Stop input thread");
                 
-                g_thread_join(read_thread);
-                device->input.read_thread = NULL;
+                g_thread_join(capture_thread);
+                device->input.capture_thread = NULL;
             }
         }
     }
@@ -479,13 +479,8 @@ gst_ndi_device_remove_device(Device* device) {
     g_ptr_array_remove(devices, device);
 }
 
-
 static void
 gst_ndi_device_release_devices() {
-    if (gst_ndi_device_get_ref_counter() > 0) {
-        return;
-    }
-
     GST_DEBUG("Release devices");
     gst_ndi_finder_release();
 
@@ -518,7 +513,9 @@ gst_ndi_device_get_devices(void) {
         list = g_list_append(list, gstDevice);
     }
 
-    gst_ndi_device_release_devices();
+    if (gst_ndi_device_get_ref_counter() == 0) {
+        gst_ndi_device_release_devices();
+    }
 
     return list;
 }
@@ -534,8 +531,8 @@ void gst_ndi_device_unref() {
     g_mutex_lock(&ref_mutex);
     --ref_counter;
     GST_DEBUG("Ref counter = %u", ref_counter);
-    g_mutex_unlock(&ref_mutex);
     if (ref_counter == 0) gst_ndi_device_release_devices();
+    g_mutex_unlock(&ref_mutex);
 }
 
 static guint
