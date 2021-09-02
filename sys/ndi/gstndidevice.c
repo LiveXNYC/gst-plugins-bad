@@ -481,6 +481,9 @@ gst_ndi_device_remove_device(Device* device) {
 
 static void
 gst_ndi_device_release_devices() {
+
+    return;
+
     GST_DEBUG("Release devices");
     gst_ndi_finder_release();
 
