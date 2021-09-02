@@ -189,8 +189,20 @@ gst_ndi_audio_src_get_caps(GstBaseSrc* src, GstCaps* filter)
     GstNdiAudioSrc* self = GST_NDI_AUDIO_SRC(src);
     GstCaps* caps = NULL;
 
-    if (self->caps != NULL) {
-        caps = gst_caps_copy(self->caps);
+    if (self->input) {
+        gint64 end_time;
+        g_mutex_lock(&self->caps_mutex);
+        end_time = g_get_monotonic_time() + 1 * G_TIME_SPAN_SECOND;
+        while (self->caps == NULL) {
+            if (!g_cond_wait_until(&self->caps_cond, &self->caps_mutex, end_time)) {
+                // timeout has passed.
+                break;
+            }
+        }
+        if (self->caps != NULL) {
+            caps = gst_caps_copy(self->caps);
+        }
+        g_mutex_unlock(&self->caps_mutex);
     }
 
     if (!caps)
@@ -292,13 +304,15 @@ void gst_ndi_audio_src_got_frame(GstElement* ndi_device, gint8* buffer, guint si
 
     GST_DEBUG_OBJECT(self, "Got frame %u", size);
     if (self->caps == NULL) {
+        g_mutex_lock(&self->caps_mutex);
         self->caps = gst_caps_new_simple("audio/x-raw",
                                          "format", G_TYPE_STRING, "F32LE",
                                          "channels", G_TYPE_INT, (int)self->input->channels,
                                          "rate", G_TYPE_INT, (int)self->input->sample_rate,
                                          NULL);
-        
-        //gst_ndi_device_src_send_caps_event(GST_BASE_SRC(self), self->caps);
+        g_cond_signal(&self->caps_cond);
+        g_mutex_unlock(&self->caps_mutex);
+
         GST_DEBUG_OBJECT(self, "caps %" GST_PTR_FORMAT, self->caps);
     }
 

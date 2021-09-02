@@ -28,6 +28,8 @@ struct _GstNdiAudioSrc
 	GstAdapter* adapter;
 	GMutex adapter_mutex;
 	GstCaps * caps;
+	GMutex caps_mutex;
+	GCond caps_cond;
 };
 
 struct _GstNdiAudioSrcClass
