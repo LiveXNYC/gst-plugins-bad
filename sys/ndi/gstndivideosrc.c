@@ -215,7 +215,7 @@ gst_ndi_video_src_start(GstBaseSrc* src)
         GstBuffer* buf = g_async_queue_timeout_pop(self->queue, 5000000);
         if (buf) {
             self->caps = gst_ndi_video_src_get_input_caps(self);
-            gst_ndi_device_src_send_caps_event(GST_BASE_SRC(self), self->caps);
+            //gst_ndi_device_src_send_caps_event(GST_BASE_SRC(self), self->caps);
             gst_object_unref(buf);
         }
     }

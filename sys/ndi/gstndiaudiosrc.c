@@ -292,10 +292,9 @@ gst_ndi_audio_src_get_input_caps(GstNdiAudioSrc* self) {
         "layout", G_TYPE_STRING, "interleaved",
         NULL);
 
-    if (self->input->channels > 2) {
-        guint64 channel_mask = (1ULL << self->input->channels) - 1;
-        gst_caps_set_simple(caps, "channel-mask", GST_TYPE_BITMASK, (guint64)channel_mask, NULL);
-    }
+    guint64 channel_mask = (1ULL << self->input->channels) - 1;
+    gst_caps_set_simple(caps, "channel-mask", GST_TYPE_BITMASK, (guint64)channel_mask, NULL);
+
     return caps;
 }
 
