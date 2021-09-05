@@ -23,8 +23,6 @@ struct _GstNdiVideoSrc
     GstNdiInput* input;
     gchar* device_path;
     gchar* device_name;
-    int xres, yres;
-    int frame_rate_N, frame_rate_D;
     GstCaps* caps;
 
     GAsyncQueue* queue;

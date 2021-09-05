@@ -109,10 +109,6 @@ gst_ndi_video_src_init(GstNdiVideoSrc* self)
     gst_base_src_set_live(GST_BASE_SRC(self), TRUE);
     gst_base_src_set_do_timestamp(GST_BASE_SRC(self), TRUE);
 
-    self->xres = 0;
-    self->yres = 0;
-    self->frame_rate_N = 0;
-    self->frame_rate_D = 0;
     self->device_path = NULL;
     self->device_name = NULL;
     self->caps = NULL;
