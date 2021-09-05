@@ -289,6 +289,7 @@ gst_ndi_audio_src_get_input_caps(GstNdiAudioSrc* self) {
         "format", G_TYPE_STRING, "F32LE",
         "channels", G_TYPE_INT, (int)self->input->channels,
         "rate", G_TYPE_INT, (int)self->input->sample_rate,
+        "layout", G_TYPE_STRING, "interleaved",
         NULL);
 
     if (self->input->channels > 2) {

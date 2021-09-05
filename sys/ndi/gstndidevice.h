@@ -65,6 +65,7 @@ void          gst_ndi_device_release_input(const char* id, GstElement * src, gbo
 void          gst_ndi_device_ref();
 void          gst_ndi_device_unref();
 void          gst_ndi_device_src_send_caps_event(GstBaseSrc* element, GstCaps* caps);
+
 GType gst_ndi_device_get_type(void);
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(GstNdiDevice, gst_object_unref)
 
