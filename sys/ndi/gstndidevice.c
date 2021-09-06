@@ -40,7 +40,7 @@ static GstElement* gst_ndi_device_create_element(GstDevice* device,
     const gchar* name);
 static void gst_ndi_device_update(const NDIlib_source_t* source, uint32_t no_sources);
 static gpointer thread_func(gpointer data);
-static guint gst_ndi_device_get_ref_counter();
+static guint gst_ndi_device_get_ref_counter(void);
 static void gst_ndi_device_remove_device(Device* device);
 
 static void
@@ -213,7 +213,7 @@ gst_ndi_device_update(const NDIlib_source_t* p_sources, uint32_t no_sources) {
 }
 
 static void
-gst_ndi_device_create_finder() {
+gst_ndi_device_create_finder(void) {
     gst_ndi_finder_create();
 }
 
@@ -519,7 +519,7 @@ gst_ndi_device_remove_device(Device* device) {
 }
 
 static void
-gst_ndi_device_release_devices() {
+gst_ndi_device_release_devices(void) {
 
     return;
 

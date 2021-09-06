@@ -62,8 +62,8 @@ struct _GstNdiOutput {
 
 GstNdiInput * gst_ndi_device_acquire_input(const char* id, GstElement * src, gboolean is_audio);
 void          gst_ndi_device_release_input(const char* id, GstElement * src, gboolean is_audio);
-void          gst_ndi_device_ref();
-void          gst_ndi_device_unref();
+void          gst_ndi_device_ref(void);
+void          gst_ndi_device_unref(void);
 void          gst_ndi_device_src_send_caps_event(GstBaseSrc* element, GstCaps* caps);
 
 GType gst_ndi_device_get_type(void);

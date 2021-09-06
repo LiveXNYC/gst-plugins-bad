@@ -250,7 +250,7 @@ gst_ndi_audio_src_read(GstAudioSrc* asrc, gpointer data, guint length, GstClockT
    g_mutex_unlock(&self->adapter_mutex);
    guint wanted = MIN(length, size);
    if (wanted > 0) {
-       GST_DEBUG_OBJECT(self, "%u %llu", length, size);
+       GST_DEBUG_OBJECT(self, "%u %lu", length, size);
        g_mutex_lock(&self->adapter_mutex);
        const guint8* ndiData = gst_adapter_map(self->adapter, wanted);
        memcpy(data, ndiData, wanted);
@@ -269,7 +269,7 @@ gst_ndi_audio_src_delay(GstAudioSrc* asrc) {
    gsize size = gst_adapter_available(self->adapter);
    g_mutex_unlock(&self->adapter_mutex);
    
-   GST_DEBUG_OBJECT(self, "%llu", size);
+   GST_DEBUG_OBJECT(self, "%lu", size);
 
    return size/8;
 }
@@ -298,7 +298,8 @@ gst_ndi_audio_src_get_input_caps(GstNdiAudioSrc* self) {
     return caps;
 }
 
-void gst_ndi_audio_src_got_frame(GstElement* ndi_device, gint8* buffer, guint size, guint stride) {
+static void
+gst_ndi_audio_src_got_frame(GstElement* ndi_device, gint8* buffer, guint size, guint stride) {
     GstNdiAudioSrc* self = GST_NDI_AUDIO_SRC(ndi_device);
 
     GST_DEBUG_OBJECT(self, "Got frame %u", size);

@@ -304,28 +304,28 @@ gst_ndi_video_src_fixate(GstBaseSrc* src, GstCaps* caps) {
 
 static gboolean
 gst_ndi_video_src_unlock(GstBaseSrc* src) {
-    GstNdiVideoSrc* self = GST_NDI_VIDEO_SRC(src);
+    //GstNdiVideoSrc* self = GST_NDI_VIDEO_SRC(src);
 
     return TRUE;
 }
 
 static gboolean
 gst_ndi_video_src_unlock_stop(GstBaseSrc* src) {
-    GstNdiVideoSrc* self = GST_NDI_VIDEO_SRC(src);
+    //GstNdiVideoSrc* self = GST_NDI_VIDEO_SRC(src);
 
     return TRUE;
 }
 
 static GstFlowReturn
 gst_ndi_video_src_fill(GstPushSrc* pushsrc, GstBuffer* buf) {
-    GstNdiVideoSrc* self = GST_NDI_VIDEO_SRC(pushsrc);
+    //GstNdiVideoSrc* self = GST_NDI_VIDEO_SRC(pushsrc);
 
     GstMapInfo info;
     if (!gst_buffer_map(buf, &info, GST_MAP_WRITE))
     {
         return GST_FLOW_ERROR;
     }
-    guint8* data = info.data;
+    //guint8* data = info.data;
     //memcpy(data, video_frame.p_data, info.size);
     GST_BUFFER_DTS(buf) = GST_CLOCK_TIME_NONE;
     gst_buffer_unmap(buf, &info);

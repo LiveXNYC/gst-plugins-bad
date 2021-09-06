@@ -45,7 +45,7 @@ thread_func(gpointer data) {
     return NULL;
 }
 
-void gst_ndi_finder_create() {
+void gst_ndi_finder_create(void) {
     if (finder == NULL) {
         finder = g_new0(Finder, 1);
         g_mutex_init(&finder->list_lock);
@@ -93,7 +93,7 @@ void gst_ndi_finder_create() {
     }
 }
 
-void gst_ndi_finder_release() {
+void gst_ndi_finder_release(void) {
     if (finder == NULL) {
         return;
     }

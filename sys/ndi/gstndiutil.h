@@ -16,8 +16,8 @@ NDIlib_video_frame_v2_t gst_ndi_util_get_video_frame(NDIlib_recv_instance_t inst
 NDIlib_audio_frame_v2_t gst_ndi_util_get_audio_frame(NDIlib_recv_instance_t instance, gint timeout);
 GstCaps* gst_util_create_video_caps(const NDIlib_video_frame_v2_t* frame);
 GstCaps* gst_util_create_audio_caps(const NDIlib_audio_frame_v2_t* frame);
-GstCaps* gst_util_create_default_video_caps();
-GstCaps* gst_util_create_default_audio_caps();
+GstCaps* gst_util_create_default_video_caps(void);
+GstCaps* gst_util_create_default_audio_caps(void);
 
 G_END_DECLS
 

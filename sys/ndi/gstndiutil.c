@@ -37,6 +37,8 @@ gst_ndi_util_get_format(NDIlib_FourCC_video_type_e fourCC) {
     case NDIlib_FourCC_type_RGBX:
         res = "RGBX";
         break;
+    default:
+        break;
     }
     return res;
 }
@@ -54,6 +56,8 @@ gst_ndi_util_get_frame_format(NDIlib_frame_format_type_e frameFormat) {
     case NDIlib_frame_format_type_field_0:
     case NDIlib_frame_format_type_field_1:
         res = "alternate";
+        break;
+    default:
         break;
     }
     return res;
@@ -104,10 +108,10 @@ GstCaps* gst_util_create_audio_caps(const NDIlib_audio_frame_v2_t* frame) {
     return caps;
 }
 
-GstCaps* gst_util_create_default_video_caps() {
+GstCaps* gst_util_create_default_video_caps(void) {
     return gst_caps_new_any();
 }
 
-GstCaps* gst_util_create_default_audio_caps() {
+GstCaps* gst_util_create_default_audio_caps(void) {
     return gst_caps_from_string("audio/x-raw, format=F32LE, channels=[1, 16], rate={44100, 48000, 96000}, layout=interleaved");
 }

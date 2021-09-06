@@ -15,7 +15,7 @@ static void
 gst_ndi_device_provider_class_init(GstNdiDeviceProviderClass* klass)
 {
     GstDeviceProviderClass* provider_class = GST_DEVICE_PROVIDER_CLASS(klass);
-    GObjectClass* gobject_class = G_OBJECT_CLASS(klass);
+    //GObjectClass* gobject_class = G_OBJECT_CLASS(klass);
 
     provider_class->probe = GST_DEBUG_FUNCPTR(gst_ndi_device_provider_probe);
 
