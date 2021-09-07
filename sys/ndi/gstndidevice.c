@@ -258,8 +258,7 @@ gst_ndi_device_update_video_input(Device* self, NDIlib_video_frame_v2_t* video_f
     self->input.frame_format_type = video_frame->frame_format_type;
     self->input.FourCC = video_frame->FourCC;
     if (self->input.got_video_frame) {
-        // TODO: get actual size 
-        gsize size = video_frame->line_stride_in_bytes * video_frame->yres;
+        guint size = video_frame->line_stride_in_bytes * video_frame->yres;
         self->input.got_video_frame(self->input.videosrc, (gint8*)video_frame->p_data, size);
     }
 }
@@ -285,10 +284,10 @@ gst_ndi_device_capture(Device* self) {
         }
     }
 
+    NDIlib_audio_frame_v2_t audio_frame;
+    NDIlib_video_frame_v2_t video_frame;
     while (!self->input.is_capture_terminated) {
-        NDIlib_audio_frame_v2_t audio_frame;
-        NDIlib_video_frame_v2_t video_frame;
-        NDIlib_frame_type_e res = NDIlib_recv_capture_v2(self->input.pNDI_recv, &video_frame, &audio_frame, NULL, 5000);
+        NDIlib_frame_type_e res = NDIlib_recv_capture_v2(self->input.pNDI_recv, &video_frame, &audio_frame, NULL, 500);
         if (res == NDIlib_frame_type_video) {
             gst_ndi_device_update_video_input(self, &video_frame);
             NDIlib_recv_free_video_v2(self->input.pNDI_recv, &video_frame);

@@ -339,17 +339,17 @@ static GstFlowReturn
 gst_ndi_video_src_create(GstPushSrc* pushsrc, GstBuffer** buffer)
 {
     GstNdiVideoSrc* self = GST_NDI_VIDEO_SRC(pushsrc);
-    GST_DEBUG_OBJECT(self, "!!!");
 
-    GstBuffer* buf = g_async_queue_timeout_pop(self->queue, 5000000);
-    if (buf) {
-        *buffer = buf;
-        return GST_FLOW_OK;
-    }
-    else {
+    GstBuffer* buf = g_async_queue_timeout_pop(self->queue, 100000);
+    if (!buf) {
         GST_DEBUG_OBJECT(self, "No buffer");
+        gsize size = self->input->yres * self->input->yres * 2;
+        buf = gst_buffer_new_allocate(NULL, size, NULL);
+        gst_buffer_memset(buf, 0, 0, size);
     }
-    return GST_FLOW_ERROR;
+
+    *buffer = buf;
+    return GST_FLOW_OK;
 }
 
 static void gst_ndi_video_src_got_frame(GstElement* ndi_device, gint8* buffer, guint size) {
