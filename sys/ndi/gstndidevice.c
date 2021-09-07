@@ -163,7 +163,7 @@ gst_ndi_device_update(const NDIlib_source_t* p_sources, uint32_t no_sources) {
         return;
     }
 
-    GST_DEBUG("Upating devices");
+    GST_DEBUG("Updating devices");
 
     for (guint i = 0; i < devices->len; ) {
         Device* device = (Device*)g_ptr_array_index(devices, i);
@@ -228,7 +228,7 @@ gst_ndi_update_devices(void) {
 
 static NDIlib_recv_instance_t
 gst_ndi_device_create_ndi_receiver(const gchar* url_adress, const gchar* name) {
-    GST_DEBUG("Create NDI receiver");
+    GST_DEBUG("Create NDI receiver for %s", url_adress);
 
     NDIlib_recv_create_v3_t create;
     create.source_to_connect_to.p_url_address = url_adress;
@@ -259,7 +259,7 @@ gst_ndi_device_update_video_input(Device* self, NDIlib_video_frame_v2_t* video_f
     self->input.FourCC = video_frame->FourCC;
     if (self->input.got_video_frame) {
         // TODO: get actual size 
-        gsize size = video_frame->xres * video_frame->yres * 2;
+        gsize size = video_frame->line_stride_in_bytes * video_frame->yres;
         self->input.got_video_frame(self->input.videosrc, (gint8*)video_frame->p_data, size);
     }
 }
@@ -298,7 +298,7 @@ gst_ndi_device_capture(Device* self) {
             NDIlib_recv_free_audio_v2(self->input.pNDI_recv, &audio_frame);
         }
         else if (res == NDIlib_frame_type_error) {
-            GST_DEBUG("NDI receive ERROR");
+            GST_DEBUG("NDI receive ERROR %s", self->id);
         }
     }
 
@@ -359,7 +359,7 @@ static gpointer
  device_capture_thread_func(gpointer data) {
     Device* self = (Device*)data;
 
-    GST_DEBUG("START NDI READ THREAD");
+    GST_DEBUG("START NDI CAPTURE THREAD");
 
     self->input.is_started = TRUE;
     
@@ -368,7 +368,7 @@ static gpointer
 
     self->input.is_started = FALSE;
     
-    GST_DEBUG("STOP NDI READ THREAD");
+    GST_DEBUG("STOP NDI CAPTURE THREAD");
 
     return NULL;
 }
@@ -468,7 +468,7 @@ gst_ndi_device_stop_capture_thread(Device* device) {
         GThread* capture_thread = g_steal_pointer(&device->input.capture_thread);
         device->input.is_capture_terminated = TRUE;
 
-        GST_DEBUG("Stop input thread");
+        GST_DEBUG("Stop capture thread");
 
         g_thread_join(capture_thread);
         device->input.capture_thread = NULL;
@@ -562,14 +562,14 @@ gst_ndi_device_get_devices(void) {
     return list;
 }
 
-void gst_ndi_device_ref() {
+void gst_ndi_device_ref(void) {
     g_mutex_lock(&ref_mutex);
     ++ref_counter;
     GST_DEBUG("Ref counter = %u", ref_counter);
     g_mutex_unlock(&ref_mutex);
 }
 
-void gst_ndi_device_unref() {
+void gst_ndi_device_unref(void) {
     g_mutex_lock(&ref_mutex);
     --ref_counter;
     GST_DEBUG("Ref counter = %u", ref_counter);
@@ -578,7 +578,7 @@ void gst_ndi_device_unref() {
 }
 
 static guint
-gst_ndi_device_get_ref_counter() {
+gst_ndi_device_get_ref_counter(void) {
     guint rc = 0;
     g_mutex_lock(&ref_mutex);
     rc = ref_counter;

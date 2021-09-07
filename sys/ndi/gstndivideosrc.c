@@ -42,6 +42,7 @@ static GstCaps* gst_ndi_video_src_get_caps(GstBaseSrc* src, GstCaps* filter);
 static GstCaps* gst_ndi_video_src_fixate(GstBaseSrc* src, GstCaps* caps);
 static gboolean gst_ndi_video_src_unlock(GstBaseSrc* src);
 static gboolean gst_ndi_video_src_unlock_stop(GstBaseSrc* src);
+static gboolean gst_ndi_video_src_query(GstBaseSrc* bsrc, GstQuery* query);
 
 static GstFlowReturn
 gst_ndi_video_src_fill(GstPushSrc* pushsrc, GstBuffer* buf);
@@ -92,6 +93,7 @@ gst_ndi_video_src_class_init(GstNdiVideoSrcClass* klass)
     basesrc_class->fixate = GST_DEBUG_FUNCPTR(gst_ndi_video_src_fixate);
     basesrc_class->unlock = GST_DEBUG_FUNCPTR(gst_ndi_video_src_unlock);
     basesrc_class->unlock_stop = GST_DEBUG_FUNCPTR(gst_ndi_video_src_unlock_stop);
+    basesrc_class->query = GST_DEBUG_FUNCPTR(gst_ndi_video_src_query);
 
     //pushsrc_class->fill = GST_DEBUG_FUNCPTR(gst_ndi_video_src_fill);
     pushsrc_class->create = GST_DEBUG_FUNCPTR(gst_ndi_video_src_create);
@@ -212,7 +214,7 @@ gst_ndi_video_src_start(GstBaseSrc* src)
     GST_DEBUG_OBJECT(self, "Src Start");
 
     if (gst_ndi_video_src_acquire_input(self)) {
-        GstBuffer* buf = g_async_queue_timeout_pop(self->queue, 5000000);
+        GstBuffer* buf = g_async_queue_timeout_pop(self->queue, 15000000);
         if (buf) {
             self->caps = gst_ndi_video_src_get_input_caps(self);
             //gst_ndi_device_src_send_caps_event(GST_BASE_SRC(self), self->caps);
@@ -388,4 +390,33 @@ static void gst_ndi_video_src_release_input(GstNdiVideoSrc* self) {
         gst_ndi_device_release_input(self->device_path, GST_ELEMENT(self), FALSE);
         self->input = NULL;
     }
+}
+
+static gboolean gst_ndi_video_src_query(GstBaseSrc* bsrc, GstQuery* query) {
+    GstNdiVideoSrc* self = GST_NDI_VIDEO_SRC(bsrc);
+    gboolean ret = TRUE;
+
+    switch (GST_QUERY_TYPE(query)) {
+    case GST_QUERY_LATENCY: {
+        if (self->input) {
+            GstClockTime min, max;
+
+            min = gst_util_uint64_scale_ceil(GST_SECOND, self->input->frame_rate_D, self->input->frame_rate_N);
+            max = 5 * min;
+
+            gst_query_set_latency(query, TRUE, min, max);
+            ret = TRUE;
+        }
+        else {
+            ret = FALSE;
+        }
+
+        break;
+    }
+    default:
+        ret = GST_BASE_SRC_CLASS(parent_class)->query(bsrc, query);
+        break;
+    }
+
+    return ret;
 }
