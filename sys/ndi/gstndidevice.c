@@ -267,9 +267,10 @@ static void
 gst_ndi_device_update_audio_input(Device* self, NDIlib_audio_frame_v2_t* audio_frame) {
     self->input.channels = audio_frame->no_channels;
     self->input.sample_rate = audio_frame->sample_rate;
+    self->input.audio_buffer_size = audio_frame->no_samples * sizeof(float) * audio_frame->no_channels;
     int stride = audio_frame->no_channels == 1 ? 0 :audio_frame->channel_stride_in_bytes;
     if (self->input.got_audio_frame) {
-        self->input.got_audio_frame(self->input.audiosrc, (gint8*)audio_frame->p_data, audio_frame->no_samples * sizeof(float) * audio_frame->no_channels
+        self->input.got_audio_frame(self->input.audiosrc, (gint8*)audio_frame->p_data, self->input.audio_buffer_size
             , stride);
     }
 }

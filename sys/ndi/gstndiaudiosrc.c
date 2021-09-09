@@ -230,6 +230,14 @@ gst_ndi_audio_src_prepare(GstAudioSrc* asrc, GstAudioRingBufferSpec* spec) {
    bpf = GST_AUDIO_INFO_BPF (&spec->info);
    rate = GST_AUDIO_INFO_RATE (&spec->info);
    GST_INFO_OBJECT (self, "bpf is %i bytes, rate is %i Hz",  bpf, rate);
+   GST_INFO_OBJECT(self, "segsize = %i latency_time = %llu segtotal = %i", spec->segsize, spec->latency_time, spec->segtotal);
+   
+   spec->segsize = self->input->audio_buffer_size;
+   spec->segtotal = 2;
+   /* The device usually takes time = 1-2 segments to start producing buffers */
+   spec->seglatency = spec->segtotal + 2;
+
+   GST_INFO_OBJECT(self, "segsize = %i latency_time = %llu segtotal = %i", spec->segsize, spec->latency_time, spec->segtotal);
 
    return TRUE;
 }
@@ -258,6 +266,7 @@ gst_ndi_audio_src_read(GstAudioSrc* asrc, gpointer data, guint length, GstClockT
        gst_adapter_flush(self->adapter, wanted);
        g_mutex_unlock(&self->adapter_mutex);
    }
+
    return wanted;
 }
 

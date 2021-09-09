@@ -53,6 +53,7 @@ struct _GstNdiInput {
     gboolean is_audio_enabled;
     guint channels;
     guint sample_rate;
+    guint audio_buffer_size;
 };
 
 typedef struct _GstNdiOutput GstNdiOutput;
