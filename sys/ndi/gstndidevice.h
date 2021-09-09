@@ -46,6 +46,7 @@ struct _GstNdiInput {
     int frame_rate_D;
     NDIlib_frame_format_type_e frame_format_type;
     NDIlib_FourCC_video_type_e FourCC;
+    int stride;
 
     /* Set by the audio source */
     void (*got_audio_frame) (GstElement* ndi_device, gint8* buffer, guint size, guint stride);
