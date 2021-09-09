@@ -343,11 +343,13 @@ gst_ndi_video_src_create(GstPushSrc* pushsrc, GstBuffer** buffer)
     GstBuffer* buf = g_async_queue_timeout_pop(self->queue, 100000);
     if (!buf) {
         GST_DEBUG_OBJECT(self, "No buffer");
-        gsize size = self->input->yres * self->input->yres * 2;
+        gsize size = self->input->yres * self->input->stride;
         buf = gst_buffer_new_allocate(NULL, size, NULL);
         gst_buffer_memset(buf, 0, 0, size);
     }
 
+    GST_BUFFER_PTS(buf) = GST_CLOCK_TIME_NONE;
+    GST_BUFFER_DTS(buf) = GST_CLOCK_TIME_NONE;
     *buffer = buf;
     return GST_FLOW_OK;
 }
