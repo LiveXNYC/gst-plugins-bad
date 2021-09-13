@@ -287,7 +287,7 @@ gst_ndi_audio_src_delay(GstAudioSrc* asrc) {
    
    GST_DEBUG_OBJECT(self, "%lu", size);
 
-   return size/8;
+   return size / sizeof(float) / self->input->channels;
 }
 
 static void 
