@@ -138,7 +138,7 @@ gst_ndi_video_src_finalize(GObject* object)
     if (self->queue) {
         while (g_async_queue_length(self->queue) > 0) {
             GstBuffer* buffer = (GstBuffer*)g_async_queue_pop(self->queue);
-            gst_object_unref(buffer);
+            gst_buffer_unref(buffer);
             g_async_queue_remove(self->queue, buffer);
         }
         g_async_queue_unref(self->queue);
@@ -218,7 +218,7 @@ gst_ndi_video_src_start(GstBaseSrc* src)
         if (buf) {
             self->caps = gst_ndi_video_src_get_input_caps(self);
             //gst_ndi_device_src_send_caps_event(GST_BASE_SRC(self), self->caps);
-            gst_object_unref(buf);
+            gst_buffer_unref(buf);
         }
     }
     return TRUE;
