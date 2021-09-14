@@ -26,6 +26,7 @@ struct _GstNdiVideoSrc
     GstCaps* caps;
 
     GAsyncQueue* queue;
+    GstBuffer* last_buffer;
 };
 
 struct _GstNdiVideoSrcClass

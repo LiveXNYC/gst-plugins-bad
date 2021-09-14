@@ -45,8 +45,6 @@ static gboolean gst_ndi_video_src_unlock_stop(GstBaseSrc* src);
 static gboolean gst_ndi_video_src_query(GstBaseSrc* bsrc, GstQuery* query);
 
 static GstFlowReturn
-gst_ndi_video_src_fill(GstPushSrc* pushsrc, GstBuffer* buf);
-static GstFlowReturn
 gst_ndi_video_src_create(GstPushSrc* pushsrc, GstBuffer** buffer);
 
 static gboolean gst_ndi_video_src_acquire_input(GstNdiVideoSrc* self);
@@ -115,6 +113,7 @@ gst_ndi_video_src_init(GstNdiVideoSrc* self)
     self->device_name = NULL;
     self->caps = NULL;
     self->queue = g_async_queue_new();
+    self->last_buffer = NULL;
 }
 
 static void
@@ -144,6 +143,10 @@ gst_ndi_video_src_finalize(GObject* object)
         g_async_queue_unref(self->queue);
     }
 
+    if (self->last_buffer) {
+        gst_buffer_unref(self->last_buffer);
+        self->last_buffer = NULL;
+    }
     gst_ndi_device_unref();
 
     G_OBJECT_CLASS(parent_class)->finalize(object);
@@ -252,16 +255,6 @@ gst_ndi_video_src_get_caps(GstBaseSrc* src, GstCaps* filter)
     GstNdiVideoSrc* self = GST_NDI_VIDEO_SRC(src);
     GstCaps* caps = NULL;
 
-    /*if (self->caps == NULL) {
-        if (gst_ndi_video_src_acquire_input(self)) {
-            GstBuffer* buf = g_async_queue_timeout_pop(self->queue, 5000000);
-            if (buf) {
-                self->caps = gst_ndi_video_src_get_input_caps(self);
-                gst_object_unref(buf);
-            }
-        }
-    }*/
-
     if (self->caps != NULL) {
         caps = gst_caps_copy(self->caps);
     }
@@ -319,23 +312,6 @@ gst_ndi_video_src_unlock_stop(GstBaseSrc* src) {
 }
 
 static GstFlowReturn
-gst_ndi_video_src_fill(GstPushSrc* pushsrc, GstBuffer* buf) {
-    //GstNdiVideoSrc* self = GST_NDI_VIDEO_SRC(pushsrc);
-
-    GstMapInfo info;
-    if (!gst_buffer_map(buf, &info, GST_MAP_WRITE))
-    {
-        return GST_FLOW_ERROR;
-    }
-    //guint8* data = info.data;
-    //memcpy(data, video_frame.p_data, info.size);
-    GST_BUFFER_DTS(buf) = GST_CLOCK_TIME_NONE;
-    gst_buffer_unmap(buf, &info);
-
-    return GST_FLOW_OK;
-}
-
-static GstFlowReturn
 gst_ndi_video_src_create(GstPushSrc* pushsrc, GstBuffer** buffer)
 {
     GstNdiVideoSrc* self = GST_NDI_VIDEO_SRC(pushsrc);
@@ -343,9 +319,8 @@ gst_ndi_video_src_create(GstPushSrc* pushsrc, GstBuffer** buffer)
     GstBuffer* buf = g_async_queue_timeout_pop(self->queue, 100000);
     if (!buf) {
         GST_DEBUG_OBJECT(self, "No buffer");
-        gsize size = self->input->yres * self->input->stride;
-        buf = gst_buffer_new_allocate(NULL, size, NULL);
-        gst_buffer_memset(buf, 0, 0, size);
+        gst_buffer_ref(self->last_buffer);
+        buf = self->last_buffer;
     }
 
     GST_BUFFER_PTS(buf) = GST_CLOCK_TIME_NONE;
@@ -363,10 +338,16 @@ static void gst_ndi_video_src_got_frame(GstElement* ndi_device, gint8* buffer, g
         GST_DEBUG_OBJECT(self, "caps %" GST_PTR_FORMAT, self->caps);
     }
 
-    GstBuffer* buf = gst_buffer_new_allocate(NULL, size, NULL);
-    gst_buffer_fill(buf, 0, buffer, size);
+    if (self->last_buffer) {
+        gst_buffer_unref(self->last_buffer);
+    }
 
-    g_async_queue_push(self->queue, buf);
+    self->last_buffer = gst_buffer_new_allocate(NULL, size, NULL);
+    gst_buffer_fill(self->last_buffer, 0, buffer, size);
+    
+    gst_buffer_ref(self->last_buffer);
+
+    g_async_queue_push(self->queue, self->last_buffer);
 }
 
 static gboolean
