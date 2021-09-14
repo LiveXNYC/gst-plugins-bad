@@ -20,21 +20,21 @@ typedef struct _GstNdiAudioSrcClass GstNdiAudioSrcClass;
 
 struct _GstNdiAudioSrc
 {
-	GstAudioSrc parent;
+	GstPushSrc parent;
 	
 	GstNdiInput* input;
 	gchar* device_path;
 	gchar* device_name;
-	GstAdapter* adapter;
-	GMutex adapter_mutex;
 	GstCaps * caps;
 	GMutex caps_mutex;
 	GCond caps_cond;
+
+	GAsyncQueue* queue;
 };
 
 struct _GstNdiAudioSrcClass
 {
-	GstAudioSrcClass parent_class;
+	GstPushSrcClass parent_class;
 };
 
 GType gst_ndi_audio_src_get_type(void);
