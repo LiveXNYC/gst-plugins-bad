@@ -55,7 +55,7 @@ void gst_ndi_finder_create(void) {
 
     if (finder->pNDI_find == NULL) {
 
-        GST_DEBUG("Creating Finder");
+        GST_DEBUG("Creating NDI finder");
 
         finder->is_finder_started = FALSE;
         finder->is_finder_terminated = FALSE;
@@ -68,25 +68,25 @@ void gst_ndi_finder_create(void) {
 
         if (finder->pNDI_find == NULL) {
 
-            GST_DEBUG("Creating Finder FAILED");
+            GST_ERROR("Creating NDI finder failed");
 
             return;
         }
 
-        GST_DEBUG("Creating Finder Thread");
+        GST_DEBUG("Creating NDI finder thread");
 
         GError* error = NULL;
         finder->finder_thread =
             g_thread_try_new("GstNdiFinder", thread_func, (gpointer)NULL, &error);
 
-        GST_DEBUG("Wait Signal");
+        GST_DEBUG("Wait signal");
 
         g_mutex_lock(&finder->data_mutex);
         while (!finder->is_finder_started)
             g_cond_wait(&finder->data_cond, &finder->data_mutex);
         g_mutex_unlock(&finder->data_mutex);
 
-        GST_DEBUG("Signal Received");
+        GST_DEBUG("Signal received");
     }
     else {
         GST_DEBUG("Finder is created already");
@@ -99,13 +99,13 @@ void gst_ndi_finder_release(void) {
     }
 
     if (finder->finder_thread) {
-        GST_DEBUG("Stopping Finder thread");
+        GST_DEBUG("Stopping NDI finder thread");
         GThread* thread = g_steal_pointer(&finder->finder_thread);
         finder->is_finder_terminated = TRUE;
 
         g_thread_join(thread);
     }
-    GST_DEBUG("Destroy Finder");
+    GST_DEBUG("Destroy NDI finder");
     // Destroy the NDI finder
     NDIlib_find_destroy(finder->pNDI_find);
     

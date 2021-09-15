@@ -177,7 +177,7 @@ gst_ndi_device_update(const NDIlib_source_t* p_sources, uint32_t no_sources) {
         }
         ++i;
         if (!isFind) {
-            GST_DEBUG("Remove device id = %s, name = %s", device->id, device->p_ndi_name);
+            GST_INFO("Remove device id = %s, name = %s", device->id, device->p_ndi_name);
             gst_ndi_device_remove_device(device);
             i = 0;
         }
@@ -207,7 +207,7 @@ gst_ndi_device_update(const NDIlib_source_t* p_sources, uint32_t no_sources) {
             device->p_ndi_name = g_strdup(source->p_ndi_name);
             g_mutex_init(&device->input.lock);
             g_ptr_array_add(devices, device);
-            GST_DEBUG("Add device id = %s, name = %s", device->id, device->p_ndi_name);
+            GST_INFO("Add device id = %s, name = %s", device->id, device->p_ndi_name);
         }
     }
 }
@@ -380,12 +380,12 @@ gst_ndi_device_acquire_input(const char* id, GstElement * src, gboolean is_audio
 
     if (!devices) {
 
-        GST_DEBUG("ACQUIRE. No devices");
+        GST_INFO("Acquire input. No devices");
         
         return NULL;
     }
 
-    GST_DEBUG("ACQUIRE. Total devices: %d", devices->len);
+    GST_INFO("Acquire input. Total devices: %d", devices->len);
 
     gboolean is_error = FALSE;
     for (guint i = 0; i < devices->len; ++i) {
@@ -396,10 +396,10 @@ gst_ndi_device_acquire_input(const char* id, GstElement * src, gboolean is_audio
                     device->input.audiosrc = src;
                     device->input.is_audio_enabled = TRUE;
 
-                    GST_DEBUG("Audio Input is acquired");
+                    GST_INFO("Audio input is acquired");
                 }
                 else {
-                    GST_DEBUG("Audio Input is busy");
+                    GST_ERROR("Audio input is busy");
 
                     is_error = TRUE;
                 }
@@ -409,10 +409,10 @@ gst_ndi_device_acquire_input(const char* id, GstElement * src, gboolean is_audio
                     device->input.videosrc = src;
                     device->input.is_video_enabled = TRUE;
 
-                    GST_DEBUG("Video Input is acquired");
+                    GST_INFO("Video input is acquired");
                 }
                 else {
-                    GST_DEBUG("Video Input is busy");
+                    GST_ERROR("Video input is busy");
                     
                     is_error = TRUE;
                 }
@@ -436,7 +436,7 @@ gst_ndi_device_acquire_input(const char* id, GstElement * src, gboolean is_audio
         }
     }
 
-    GST_DEBUG("ACQUIRE FAILED");
+    GST_ERROR("Acquire failed");
     
     return NULL;
 }
@@ -486,7 +486,7 @@ gst_ndi_device_release_input(const char* id, GstElement * src, gboolean is_audio
                     device->input.audiosrc = NULL;
                     device->input.is_audio_enabled = FALSE;
 
-                    GST_DEBUG("Audio Input is free");
+                    GST_INFO("Audio input is free");
                 }
             }
             else {
@@ -494,7 +494,7 @@ gst_ndi_device_release_input(const char* id, GstElement * src, gboolean is_audio
                     device->input.videosrc = NULL;
                     device->input.is_video_enabled = FALSE;
 
-                    GST_DEBUG("Video Input is free");
+                    GST_INFO("Video input is free");
                 }
             }
 

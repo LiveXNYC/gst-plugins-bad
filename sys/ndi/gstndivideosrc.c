@@ -214,7 +214,7 @@ gst_ndi_video_src_start(GstBaseSrc* src)
 {
     GstNdiVideoSrc* self = GST_NDI_VIDEO_SRC(src);
     
-    GST_DEBUG_OBJECT(self, "Src Start");
+    GST_DEBUG_OBJECT(self, "Start");
 
     if (gst_ndi_video_src_acquire_input(self)) {
         GstBuffer* buf = g_async_queue_timeout_pop(self->queue, 15000000);
@@ -232,7 +232,7 @@ gst_ndi_video_src_stop(GstBaseSrc* src)
 {
     GstNdiVideoSrc* self = GST_NDI_VIDEO_SRC(src);
 
-    GST_DEBUG_OBJECT(self, "Src Stop");
+    GST_DEBUG_OBJECT(self, "Stop");
 
     gst_ndi_video_src_release_input(self);
 
