@@ -39,4 +39,4 @@ GST_PLUGIN_DEFINE(GST_VERSION_MAJOR,
     GST_VERSION_MINOR,
     ndi,
     "NDI plugin",
-    plugin_init, "1.18.4", "LGPL", PACKAGE, "support@teaminua.com")
+    plugin_init, "1.18.5", "LGPL", PACKAGE, "support@teaminua.com")
