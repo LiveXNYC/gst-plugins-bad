@@ -319,8 +319,13 @@ gst_ndi_video_src_create(GstPushSrc* pushsrc, GstBuffer** buffer)
     GstBuffer* buf = g_async_queue_timeout_pop(self->queue, 100000);
     if (!buf) {
         GST_DEBUG_OBJECT(self, "No buffer");
-        gst_buffer_ref(self->last_buffer);
-        buf = self->last_buffer;
+        if (self->last_buffer) {
+            gst_buffer_ref(self->last_buffer);
+            buf = self->last_buffer;
+        }
+        else {
+            return GST_FLOW_ERROR;
+        }
     }
 
     GST_BUFFER_PTS(buf) = GST_CLOCK_TIME_NONE;
