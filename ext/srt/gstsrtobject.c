@@ -1419,7 +1419,7 @@ gst_srt_object_send_headers (GstSRTObject * srtobject, SRTSOCKET sock,
 
     if (poll_id > 0 && srt_epoll_wait (poll_id, 0, 0, &wsock,
             &wsocklen, poll_timeout, NULL, 0, NULL, 0) < 0) {
-      continue;
+      break;
     }
 
     GST_TRACE_OBJECT (srtobject->element, "sending header %u %" GST_PTR_FORMAT,
