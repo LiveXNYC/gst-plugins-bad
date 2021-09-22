@@ -27,6 +27,8 @@ struct _GstNdiVideoSrc
 
     GAsyncQueue* queue;
     GstBuffer* last_buffer;
+    guint64 n_frames;
+    GstClockTime timestamp_offset;
 };
 
 struct _GstNdiVideoSrcClass

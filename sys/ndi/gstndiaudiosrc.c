@@ -43,6 +43,11 @@ static gboolean gst_ndi_audio_src_unlock(GstBaseSrc* src);
 static gboolean gst_ndi_audio_src_unlock_stop(GstBaseSrc* src);
 static gboolean gst_ndi_audio_src_query(GstBaseSrc* bsrc, GstQuery* query);
 static GstFlowReturn gst_ndi_audio_src_create(GstPushSrc* pushsrc, GstBuffer** buffer);
+static void gst_ndi_audio_src_get_times(GstBaseSrc* src, GstBuffer* buffer,
+    GstClockTime* start, GstClockTime* end);
+static GstStateChangeReturn
+gst_ndi_audio_src_change_state(GstElement* element,
+    GstStateChange transition);
 
 static void
 gst_ndi_audio_src_class_init(GstNdiAudioSrcClass* klass)
@@ -64,6 +69,9 @@ gst_ndi_audio_src_class_init(GstNdiAudioSrcClass* klass)
     basesrc_class->unlock = GST_DEBUG_FUNCPTR(gst_ndi_audio_src_unlock);
     basesrc_class->unlock_stop = GST_DEBUG_FUNCPTR(gst_ndi_audio_src_unlock_stop);
     basesrc_class->query = GST_DEBUG_FUNCPTR(gst_ndi_audio_src_query);
+    basesrc_class->get_times = GST_DEBUG_FUNCPTR(gst_ndi_audio_src_get_times);
+    element_class->change_state = GST_DEBUG_FUNCPTR(gst_ndi_audio_src_change_state);
+
     pushsrc_class->create = GST_DEBUG_FUNCPTR(gst_ndi_audio_src_create);
 
     g_object_class_install_property(gobject_class, PROP_DEVICE_PATH,
@@ -98,6 +106,17 @@ gst_ndi_audio_src_init(GstNdiAudioSrc* self)
 }
 
 static void
+gst_ndi_audio_src_clear_queue(GstNdiAudioSrc* self) {
+    if (self->queue) {
+        while (g_async_queue_length(self->queue) > 0) {
+            GstBuffer* buffer = (GstBuffer*)g_async_queue_pop(self->queue);
+            gst_buffer_unref(buffer);
+            g_async_queue_remove(self->queue, buffer);
+        }
+    }
+}
+
+static void
 gst_ndi_audio_src_finalize(GObject* object)
 {
     GstNdiAudioSrc* self = GST_NDI_AUDIO_SRC_CAST(object);
@@ -117,12 +136,9 @@ gst_ndi_audio_src_finalize(GObject* object)
     }
 
     if (self->queue) {
-        while (g_async_queue_length(self->queue) > 0) {
-            GstBuffer* buffer = (GstBuffer*)g_async_queue_pop(self->queue);
-            gst_buffer_unref(buffer);
-            g_async_queue_remove(self->queue, buffer);
-        }
+        gst_ndi_audio_src_clear_queue(self);
         g_async_queue_unref(self->queue);
+        self->queue = NULL;
     }
 
     gst_ndi_device_unref();
@@ -252,7 +268,26 @@ gst_ndi_audio_src_got_frame(GstElement* ndi_device, gint8* buffer, guint size, g
         bufferOffset += sizeof(float);
     }
 
+    guint n;
+    n = size / sizeof(float) / self->input->channels;
+    GST_BUFFER_OFFSET(tmp) = self->n_samples;
+    GST_BUFFER_OFFSET_END(tmp) = self->n_samples + n;
+    
+    GST_BUFFER_DTS(tmp) = GST_CLOCK_TIME_NONE;
+    
+    GST_BUFFER_PTS(tmp) = self->timestamp_offset + gst_util_uint64_scale(self->n_samples, GST_SECOND, self->input->sample_rate);
+    GST_BUFFER_DURATION(tmp) = self->timestamp_offset + gst_util_uint64_scale(self->n_samples + n, GST_SECOND, self->input->sample_rate) - GST_BUFFER_TIMESTAMP(tmp);
+
+    GST_BUFFER_FLAG_UNSET(tmp, GST_BUFFER_FLAG_DISCONT);
+    if (self->n_samples == 0) {
+        GST_BUFFER_FLAG_SET(tmp, GST_BUFFER_FLAG_DISCONT);
+    }
+    
+    self->n_samples += n;
+
     g_async_queue_push(self->queue, tmp);
+
+    GST_DEBUG_OBJECT(self, "create ts %" GST_TIME_FORMAT,  GST_TIME_ARGS(GST_BUFFER_TIMESTAMP(tmp)));
 }
 
 static void gst_ndi_audio_src_acquire_input(GstNdiAudioSrc* self) {
@@ -278,6 +313,8 @@ gboolean gst_ndi_audio_src_start(GstBaseSrc* src) {
     GstNdiAudioSrc* self = GST_NDI_AUDIO_SRC(src);
 
     GST_DEBUG_OBJECT(self, "Start");
+    self->timestamp_offset = 0;
+    self->n_samples = 0;
 
     gst_ndi_audio_src_acquire_input(self);
 
@@ -323,8 +360,54 @@ gboolean gst_ndi_audio_src_unlock_stop(GstBaseSrc* src) {
 
 gboolean gst_ndi_audio_src_query(GstBaseSrc* bsrc, GstQuery* query) {
     gboolean ret = TRUE;
-    ret = GST_BASE_SRC_CLASS(parent_class)->query(bsrc, query);
+    GstNdiAudioSrc* self = GST_NDI_AUDIO_SRC(bsrc);
+
+    switch (GST_QUERY_TYPE(query)) {
+    case GST_QUERY_LATENCY: {
+        if (self->input) {
+                GstClockTime min, max;
+
+                min = gst_util_uint64_scale_ceil(GST_SECOND, self->input->frame_rate_D, self->input->frame_rate_N);
+                max = 5 * min;
+
+                gst_query_set_latency(query, TRUE, min, max);
+                ret = TRUE;
+        }
+        else {
+            ret = FALSE;
+        }
+
+        break;
+    }
+    default:
+        ret = GST_BASE_SRC_CLASS(parent_class)->query(bsrc, query);
+        break;
+    }
+
     return ret;
+}
+
+static void gst_ndi_audio_src_get_times(GstBaseSrc* src, GstBuffer* buffer,
+    GstClockTime* start, GstClockTime* end)
+{
+    GstNdiAudioSrc* self = GST_NDI_AUDIO_SRC(src);
+
+    /* for live sources, sync on the timestamp of the buffer */
+    if (gst_base_src_is_live(src)) {
+        if (GST_BUFFER_TIMESTAMP_IS_VALID(buffer)) {
+            *start = GST_BUFFER_TIMESTAMP(buffer);
+            if (GST_BUFFER_DURATION_IS_VALID(buffer)) {
+                *end = *start + GST_BUFFER_DURATION(buffer);
+            }
+            else {
+                if (self->input->sample_rate > 0) {
+                    *end = *start +
+                        gst_util_uint64_scale_int(gst_buffer_get_size(buffer),
+                            GST_SECOND, self->input->sample_rate * sizeof(float) * self->input->channels);
+                }
+            }
+        }
+    }
 }
 
 GstFlowReturn gst_ndi_audio_src_create(GstPushSrc* pushsrc, GstBuffer** buffer) {
@@ -333,13 +416,45 @@ GstFlowReturn gst_ndi_audio_src_create(GstPushSrc* pushsrc, GstBuffer** buffer) 
     GstBuffer* buf = g_async_queue_timeout_pop(self->queue, 100000);
     if (!buf) {
         GST_DEBUG_OBJECT(self, "No buffer");
-        gsize size = self->input->yres * self->input->stride;
+        gsize size = self->input->audio_buffer_size;
         buf = gst_buffer_new_allocate(NULL, size, NULL);
         gst_buffer_memset(buf, 0, 0, size);
     }
 
-    GST_BUFFER_PTS(buf) = GST_CLOCK_TIME_NONE;
-    GST_BUFFER_DTS(buf) = GST_CLOCK_TIME_NONE;
     *buffer = buf;
+    
     return GST_FLOW_OK;
+}
+
+static GstStateChangeReturn
+gst_ndi_audio_src_change_state(GstElement* element, GstStateChange transition) {
+    GstNdiAudioSrc* self = GST_NDI_AUDIO_SRC(element);
+    GstStateChangeReturn ret;
+
+    switch (transition) {
+    case GST_STATE_CHANGE_NULL_TO_READY:
+        break;
+    case GST_STATE_CHANGE_READY_TO_PAUSED:
+        break;
+    case GST_STATE_CHANGE_PAUSED_TO_PLAYING:
+        gst_ndi_audio_src_clear_queue(self);
+        break;
+    default:
+        break;
+    }
+
+    ret = GST_ELEMENT_CLASS(parent_class)->change_state(element, transition);
+    if (ret == GST_STATE_CHANGE_FAILURE)
+        return ret;
+
+    switch (transition) {
+    case GST_STATE_CHANGE_PAUSED_TO_READY:
+        break;
+    case GST_STATE_CHANGE_READY_TO_NULL:
+        break;
+    default:
+        break;
+    }
+
+    return ret;
 }

@@ -46,6 +46,9 @@ static gboolean gst_ndi_video_src_query(GstBaseSrc* bsrc, GstQuery* query);
 
 static GstFlowReturn
 gst_ndi_video_src_create(GstPushSrc* pushsrc, GstBuffer** buffer);
+static void
+gst_ndi_video_src_get_times(GstBaseSrc* src, GstBuffer* buffer,
+    GstClockTime* start, GstClockTime* end);
 
 static gboolean gst_ndi_video_src_acquire_input(GstNdiVideoSrc* self);
 static void gst_ndi_video_src_release_input(GstNdiVideoSrc* self);
@@ -94,7 +97,6 @@ gst_ndi_video_src_class_init(GstNdiVideoSrcClass* klass)
     basesrc_class->unlock_stop = GST_DEBUG_FUNCPTR(gst_ndi_video_src_unlock_stop);
     basesrc_class->query = GST_DEBUG_FUNCPTR(gst_ndi_video_src_query);
 
-    //pushsrc_class->fill = GST_DEBUG_FUNCPTR(gst_ndi_video_src_fill);
     pushsrc_class->create = GST_DEBUG_FUNCPTR(gst_ndi_video_src_create);
 
     GST_DEBUG_CATEGORY_INIT(gst_ndi_video_src_debug, "ndivideosrc", 0,
@@ -215,6 +217,9 @@ gst_ndi_video_src_start(GstBaseSrc* src)
     
     GST_DEBUG_OBJECT(self, "Start");
 
+    self->timestamp_offset = 0;
+    self->n_frames = 0;
+
     if (gst_ndi_video_src_acquire_input(self)) {
         GstBuffer* buf = g_async_queue_timeout_pop(self->queue, 15000000);
         if (buf) {
@@ -288,7 +293,7 @@ gst_ndi_video_src_fixate(GstBaseSrc* src, GstCaps* caps) {
         gst_structure_fixate_field_nearest_int(structure, "width", G_MAXINT);
         gst_structure_fixate_field_nearest_int(structure, "height", G_MAXINT);
         gst_structure_fixate_field_nearest_fraction(structure, "framerate",
-            G_MAXINT, 1);
+            self->input->frame_rate_N, self->input->frame_rate_D);
     }
 
     fixated_caps = gst_caps_fixate(fixated_caps);
@@ -310,6 +315,30 @@ gst_ndi_video_src_unlock_stop(GstBaseSrc* src) {
     return TRUE;
 }
 
+static void
+gst_ndi_video_src_get_times(GstBaseSrc* src, GstBuffer* buffer,
+    GstClockTime* start, GstClockTime* end)
+{
+    /* for live sources, sync on the timestamp of the buffer */
+    if (gst_base_src_is_live(src)) {
+        GstClockTime timestamp = GST_BUFFER_PTS(buffer);
+
+        if (GST_CLOCK_TIME_IS_VALID(timestamp)) {
+            /* get duration to calculate end time */
+            GstClockTime duration = GST_BUFFER_DURATION(buffer);
+
+            if (GST_CLOCK_TIME_IS_VALID(duration)) {
+                *end = timestamp + duration;
+            }
+            *start = timestamp;
+        }
+    }
+    else {
+        *start = GST_CLOCK_TIME_NONE;
+        *end = GST_CLOCK_TIME_NONE;
+    }
+}
+
 static GstFlowReturn
 gst_ndi_video_src_create(GstPushSrc* pushsrc, GstBuffer** buffer)
 {
@@ -317,25 +346,54 @@ gst_ndi_video_src_create(GstPushSrc* pushsrc, GstBuffer** buffer)
 
     GstBuffer* buf = g_async_queue_timeout_pop(self->queue, 100000);
     if (buf) {
-        GST_DEBUG_OBJECT(self, "Got a buffer. Total: %i", g_async_queue_length(self->queue));
+        //GST_DEBUG_OBJECT(self, "Got a buffer. Total: %i", g_async_queue_length(self->queue));
         gst_ndi_video_src_free_last_buffer(self);
-        GST_BUFFER_PTS(buf) = GST_CLOCK_TIME_NONE;
-        GST_BUFFER_DTS(buf) = GST_CLOCK_TIME_NONE;
-        *buffer = buf;
-
+        
         self->last_buffer = buf;
         gst_buffer_ref(self->last_buffer);
-        
-        return GST_FLOW_OK;
     }
     else {
         GST_DEBUG_OBJECT(self, "No buffer");
         if (self->last_buffer) {
             gst_buffer_ref(self->last_buffer);
-            *buffer = self->last_buffer;
-
-            return GST_FLOW_OK;
+            buf = self->last_buffer;
         }
+    }
+
+    if (buf) {
+        GST_BUFFER_DTS(buf) = GST_CLOCK_TIME_NONE;
+        GST_BUFFER_PTS(buf) = GST_CLOCK_TIME_NONE;
+
+        GstClock* clock = gst_element_get_clock(GST_ELEMENT(pushsrc));
+        GstClockTime t =
+            GST_CLOCK_DIFF(gst_element_get_base_time(GST_ELEMENT(pushsrc)), gst_clock_get_time(clock));
+        gst_object_unref(clock);
+        
+        //self->timestamp_offset = gst_element_get_start_time(GST_ELEMENT(pushsrc));
+
+        guint64 buffer_duration = gst_util_uint64_scale(GST_SECOND, self->input->frame_rate_D, self->input->frame_rate_N);
+        GST_BUFFER_PTS(buf) = t + buffer_duration;// self->n_frames * buffer_duration;
+        GST_BUFFER_DURATION(buf) = buffer_duration;
+
+        //GST_BUFFER_PTS(buf) = self->input->timestamp;
+        //GST_BUFFER_DURATION(buf) = gst_util_uint64_scale(GST_SECOND, self->input->frame_rate_D, self->input->frame_rate_N);
+
+        GST_BUFFER_OFFSET(buf) = self->n_frames;
+        GST_BUFFER_OFFSET_END(buf) = self->n_frames + 1;
+
+        
+        GST_DEBUG_OBJECT(self, "create for %llu ts %" GST_TIME_FORMAT" %"GST_TIME_FORMAT, self->n_frames, GST_TIME_ARGS(t), GST_TIME_ARGS(GST_BUFFER_PTS(buf)));
+    
+
+        GST_BUFFER_FLAG_UNSET(buf, GST_BUFFER_FLAG_DISCONT);
+        if (self->n_frames == 0) {
+            GST_BUFFER_FLAG_SET(buf, GST_BUFFER_FLAG_DISCONT);
+        }
+        self->n_frames++;
+
+        
+        *buffer = buf;
+        return GST_FLOW_OK;
     }
 
     return GST_FLOW_ERROR;

@@ -30,6 +30,9 @@ struct _GstNdiAudioSrc
 	GCond caps_cond;
 
 	GAsyncQueue* queue;
+
+	guint64 n_samples;
+	GstClockTime timestamp_offset;
 };
 
 struct _GstNdiAudioSrcClass
