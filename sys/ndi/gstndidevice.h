@@ -37,7 +37,7 @@ struct _GstNdiInput {
     NDIlib_framesync_instance_t pNDI_recv_sync;
     
     /* Set by the video source */
-    void (*got_video_frame) (GstElement* ndi_device, gint8* buffer, guint size);
+    void (*got_video_frame) (GstElement* ndi_device, gint8* buffer, guint size, bool is_caps_changed);
     GstElement* videosrc;
     gboolean is_video_enabled;
     int xres;

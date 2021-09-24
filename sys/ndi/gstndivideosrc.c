@@ -24,6 +24,8 @@ enum
 "video/x-raw"                                                     
 #define SRC_TEMPLATE_CAPS GST_NDI_VIDEO_CAPS_MAKE (GST_MF_VIDEO_FORMATS)
 
+static int MAX_QUEUE_LENGTH = 10;
+
 static GstStaticPadTemplate src_template = GST_STATIC_PAD_TEMPLATE("src",
     GST_PAD_SRC,
     GST_PAD_ALWAYS,
@@ -141,7 +143,6 @@ gst_ndi_video_src_finalize(GObject* object)
         while (g_async_queue_length(self->queue) > 0) {
             GstBuffer* buffer = (GstBuffer*)g_async_queue_pop(self->queue);
             gst_buffer_unref(buffer);
-            g_async_queue_remove(self->queue, buffer);
         }
         g_async_queue_unref(self->queue);
     }
@@ -149,6 +150,10 @@ gst_ndi_video_src_finalize(GObject* object)
     gst_ndi_video_src_free_last_buffer(self);
 
     gst_ndi_device_unref();
+
+    if (self->caps) {
+        gst_caps_unref(self->caps);
+    }
 
     G_OBJECT_CLASS(parent_class)->finalize(object);
 }
@@ -223,6 +228,10 @@ gst_ndi_video_src_start(GstBaseSrc* src)
     if (gst_ndi_video_src_acquire_input(self)) {
         GstBuffer* buf = g_async_queue_timeout_pop(self->queue, 15000000);
         if (buf) {
+            if (self->caps) {
+                gst_caps_unref(self->caps);
+            }
+
             self->caps = gst_ndi_video_src_get_input_caps(self);
             self->last_buffer = buf;
             gst_buffer_ref(self->last_buffer);
@@ -279,6 +288,10 @@ gst_ndi_video_src_get_caps(GstBaseSrc* src, GstCaps* filter)
 static GstCaps*
 gst_ndi_video_src_fixate(GstBaseSrc* src, GstCaps* caps) {
     GstNdiVideoSrc* self = GST_NDI_VIDEO_SRC(src);
+
+    if (self->input == NULL) {
+        return caps;
+    }
 
     GstStructure* structure;
     GstCaps* fixated_caps;
@@ -362,28 +375,20 @@ gst_ndi_video_src_create(GstPushSrc* pushsrc, GstBuffer** buffer)
 
     if (buf) {
         GST_BUFFER_DTS(buf) = GST_CLOCK_TIME_NONE;
-        GST_BUFFER_PTS(buf) = GST_CLOCK_TIME_NONE;
 
         GstClock* clock = gst_element_get_clock(GST_ELEMENT(pushsrc));
         GstClockTime t =
             GST_CLOCK_DIFF(gst_element_get_base_time(GST_ELEMENT(pushsrc)), gst_clock_get_time(clock));
         gst_object_unref(clock);
         
-        //self->timestamp_offset = gst_element_get_start_time(GST_ELEMENT(pushsrc));
-
         guint64 buffer_duration = gst_util_uint64_scale(GST_SECOND, self->input->frame_rate_D, self->input->frame_rate_N);
         GST_BUFFER_PTS(buf) = t + buffer_duration;// self->n_frames * buffer_duration;
         GST_BUFFER_DURATION(buf) = buffer_duration;
 
-        //GST_BUFFER_PTS(buf) = self->input->timestamp;
-        //GST_BUFFER_DURATION(buf) = gst_util_uint64_scale(GST_SECOND, self->input->frame_rate_D, self->input->frame_rate_N);
-
         GST_BUFFER_OFFSET(buf) = self->n_frames;
         GST_BUFFER_OFFSET_END(buf) = self->n_frames + 1;
 
-        
         GST_DEBUG_OBJECT(self, "create for %llu ts %" GST_TIME_FORMAT" %"GST_TIME_FORMAT, self->n_frames, GST_TIME_ARGS(t), GST_TIME_ARGS(GST_BUFFER_PTS(buf)));
-    
 
         GST_BUFFER_FLAG_UNSET(buf, GST_BUFFER_FLAG_DISCONT);
         if (self->n_frames == 0) {
@@ -399,11 +404,22 @@ gst_ndi_video_src_create(GstPushSrc* pushsrc, GstBuffer** buffer)
     return GST_FLOW_ERROR;
 }
 
-static void gst_ndi_video_src_got_frame(GstElement* ndi_device, gint8* buffer, guint size) {
+static void 
+gst_ndi_video_src_got_frame(GstElement* ndi_device, gint8* buffer, guint size, bool is_caps_changed) {
     GstNdiVideoSrc* self = GST_NDI_VIDEO_SRC(ndi_device);
 
-    if (self->caps == NULL) {
+    if (self->caps == NULL || is_caps_changed) {
+
+        if (self->caps != NULL) {
+            gst_caps_unref(self->caps);
+        }
+        
         self->caps = gst_ndi_video_src_get_input_caps(self);
+        
+        if (is_caps_changed) {
+            gst_base_src_set_caps(GST_BASE_SRC(self), self->caps);
+        }
+
         GST_DEBUG_OBJECT(self, "caps %" GST_PTR_FORMAT, self->caps);
     }
 
@@ -412,7 +428,12 @@ static void gst_ndi_video_src_got_frame(GstElement* ndi_device, gint8* buffer, g
     
     g_async_queue_push(self->queue, buf);
 
-    GST_DEBUG_OBJECT(self, "Got a frame. Total: %i", g_async_queue_length(self->queue));
+    gint queue_length = g_async_queue_length(self->queue);
+    if (queue_length > MAX_QUEUE_LENGTH) {
+        GstBuffer* buffer = (GstBuffer*)g_async_queue_pop(self->queue);
+        gst_buffer_unref(buffer);
+    }
+    GST_DEBUG_OBJECT(self, "Got a frame. Total: %i", queue_length);
 }
 
 static gboolean

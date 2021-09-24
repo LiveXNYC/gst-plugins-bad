@@ -177,9 +177,15 @@ gst_ndi_device_update(const NDIlib_source_t* p_sources, uint32_t no_sources) {
         }
         ++i;
         if (!isFind) {
-            GST_INFO("Remove device id = %s, name = %s", device->id, device->p_ndi_name);
-            gst_ndi_device_remove_device(device);
-            i = 0;
+            // Remove device if it is not in use
+            if (!device->input.is_started) {
+                GST_INFO("Remove device id = %s, name = %s", device->id, device->p_ndi_name);
+                gst_ndi_device_remove_device(device);
+                i = 0;
+            }
+            else {
+                GST_INFO("Device id = %s, name = %s will be removed as soon as source will free it", device->id, device->p_ndi_name);
+            }
         }
     }
 
@@ -251,6 +257,17 @@ gst_ndi_device_create_ndi_receiver(const gchar* url_adress, const gchar* name) {
 
 static void
 gst_ndi_device_update_video_input(Device* self, NDIlib_video_frame_v2_t* video_frame) {
+    bool is_caps_changed = self->input.xres != video_frame->xres;
+    is_caps_changed |= self->input.yres != video_frame->yres;
+    is_caps_changed |= self->input.frame_rate_N != video_frame->frame_rate_N;
+    is_caps_changed |= self->input.frame_rate_D != video_frame->frame_rate_D;
+    is_caps_changed |= self->input.frame_format_type != video_frame->frame_format_type;
+    is_caps_changed |= self->input.FourCC != video_frame->FourCC;
+
+    if (is_caps_changed) {
+        self->input.frame_format_type = video_frame->frame_format_type;
+    }
+
     self->input.xres = video_frame->xres;
     self->input.yres = video_frame->yres;
     self->input.frame_rate_N = video_frame->frame_rate_N;
@@ -260,7 +277,7 @@ gst_ndi_device_update_video_input(Device* self, NDIlib_video_frame_v2_t* video_f
     self->input.stride = video_frame->line_stride_in_bytes;
     if (self->input.got_video_frame) {
         guint size = video_frame->line_stride_in_bytes * video_frame->yres;
-        self->input.got_video_frame(self->input.videosrc, (gint8*)video_frame->p_data, size);
+        self->input.got_video_frame(self->input.videosrc, (gint8*)video_frame->p_data, size, is_caps_changed);
     }
 }
 
