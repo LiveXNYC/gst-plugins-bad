@@ -44,6 +44,7 @@ struct _GstNdiInput {
     int yres;
     int frame_rate_N;
     int frame_rate_D;
+    float picture_aspect_ratio;
     NDIlib_frame_format_type_e frame_format_type;
     NDIlib_FourCC_video_type_e FourCC;
     int stride;

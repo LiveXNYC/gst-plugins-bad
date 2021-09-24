@@ -206,11 +206,18 @@ gst_ndi_video_src_get_input_caps(GstNdiVideoSrc* self) {
         return NULL;
     }
 
+    gint dest_n = 1, dest_d = 1;
+    if (self->input->picture_aspect_ratio != 0) {
+        double par = (double)(self->input->yres * self->input->picture_aspect_ratio) / self->input->xres;
+        gst_util_double_to_fraction(par, &dest_n, &dest_d);
+    }
+
     return gst_caps_new_simple("video/x-raw",
         "format", G_TYPE_STRING, gst_ndi_util_get_format(self->input->FourCC),
         "width", G_TYPE_INT, (int)self->input->xres,
         "height", G_TYPE_INT, (int)self->input->yres,
         "framerate", GST_TYPE_FRACTION, self->input->frame_rate_N, self->input->frame_rate_D,
+        "pixel-aspect-ratio", GST_TYPE_FRACTION, dest_n, dest_d,
         "interlace-mode", G_TYPE_STRING, gst_ndi_util_get_frame_format(self->input->frame_format_type),
         NULL);
 }
@@ -282,6 +289,7 @@ gst_ndi_video_src_get_caps(GstBaseSrc* src, GstCaps* filter)
         caps = filtered;
     }
     GST_DEBUG_OBJECT(self, "caps %" GST_PTR_FORMAT, caps);
+
     return caps;
 }
 
@@ -421,6 +429,7 @@ gst_ndi_video_src_got_frame(GstElement* ndi_device, gint8* buffer, guint size, b
         }
 
         GST_DEBUG_OBJECT(self, "caps %" GST_PTR_FORMAT, self->caps);
+        GST_DEBUG_OBJECT(self, "PAR %.03f", self->input->picture_aspect_ratio);
     }
 
     GstBuffer* buf = gst_buffer_new_allocate(NULL, size, NULL);

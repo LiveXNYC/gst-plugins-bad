@@ -275,6 +275,7 @@ gst_ndi_device_update_video_input(Device* self, NDIlib_video_frame_v2_t* video_f
     self->input.frame_format_type = video_frame->frame_format_type;
     self->input.FourCC = video_frame->FourCC;
     self->input.stride = video_frame->line_stride_in_bytes;
+    self->input.picture_aspect_ratio = video_frame->picture_aspect_ratio;
     if (self->input.got_video_frame) {
         guint size = video_frame->line_stride_in_bytes * video_frame->yres;
         self->input.got_video_frame(self->input.videosrc, (gint8*)video_frame->p_data, size, is_caps_changed);
