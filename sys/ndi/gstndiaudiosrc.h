@@ -33,6 +33,7 @@ struct _GstNdiAudioSrc
 
 	guint64 n_samples;
 	GstClockTime timestamp_offset;
+	gboolean is_eos;
 };
 
 struct _GstNdiAudioSrcClass

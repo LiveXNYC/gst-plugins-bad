@@ -29,6 +29,7 @@ struct _GstNdiVideoSrc
     GstBuffer* last_buffer;
     guint64 n_frames;
     GstClockTime timestamp_offset;
+    gboolean is_eos;
 };
 
 struct _GstNdiVideoSrcClass

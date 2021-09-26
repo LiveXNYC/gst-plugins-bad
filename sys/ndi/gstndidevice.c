@@ -257,16 +257,13 @@ gst_ndi_device_create_ndi_receiver(const gchar* url_adress, const gchar* name) {
 
 static void
 gst_ndi_device_update_video_input(Device* self, NDIlib_video_frame_v2_t* video_frame) {
-    bool is_caps_changed = self->input.xres != video_frame->xres;
+    gboolean is_caps_changed = self->input.xres != video_frame->xres;
     is_caps_changed |= self->input.yres != video_frame->yres;
     is_caps_changed |= self->input.frame_rate_N != video_frame->frame_rate_N;
     is_caps_changed |= self->input.frame_rate_D != video_frame->frame_rate_D;
     is_caps_changed |= self->input.frame_format_type != video_frame->frame_format_type;
     is_caps_changed |= self->input.FourCC != video_frame->FourCC;
-
-    if (is_caps_changed) {
-        self->input.frame_format_type = video_frame->frame_format_type;
-    }
+    is_caps_changed |= self->input.picture_aspect_ratio != video_frame->picture_aspect_ratio;
 
     self->input.xres = video_frame->xres;
     self->input.yres = video_frame->yres;
@@ -276,6 +273,7 @@ gst_ndi_device_update_video_input(Device* self, NDIlib_video_frame_v2_t* video_f
     self->input.FourCC = video_frame->FourCC;
     self->input.stride = video_frame->line_stride_in_bytes;
     self->input.picture_aspect_ratio = video_frame->picture_aspect_ratio;
+
     if (self->input.got_video_frame) {
         guint size = video_frame->line_stride_in_bytes * video_frame->yres;
         self->input.got_video_frame(self->input.videosrc, (gint8*)video_frame->p_data, size, is_caps_changed);
@@ -284,13 +282,16 @@ gst_ndi_device_update_video_input(Device* self, NDIlib_video_frame_v2_t* video_f
 
 static void
 gst_ndi_device_update_audio_input(Device* self, NDIlib_audio_frame_v2_t* audio_frame) {
+    gboolean is_caps_changed = self->input.channels != audio_frame->no_channels;
+    is_caps_changed |= self->input.sample_rate != audio_frame->sample_rate;
+
     self->input.channels = audio_frame->no_channels;
     self->input.sample_rate = audio_frame->sample_rate;
     self->input.audio_buffer_size = audio_frame->no_samples * sizeof(float) * audio_frame->no_channels;
     int stride = audio_frame->no_channels == 1 ? 0 :audio_frame->channel_stride_in_bytes;
     if (self->input.got_audio_frame) {
         self->input.got_audio_frame(self->input.audiosrc, (gint8*)audio_frame->p_data, self->input.audio_buffer_size
-            , stride);
+            , stride, is_caps_changed);
     }
 }
 

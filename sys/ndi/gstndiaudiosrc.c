@@ -101,6 +101,7 @@ gst_ndi_audio_src_init(GstNdiAudioSrc* self)
     self->caps = NULL;
     self->input = NULL;
     self->queue = g_async_queue_new();
+    self->is_eos = FALSE;
 
     gst_pad_use_fixed_caps(GST_BASE_SRC_PAD(self));
 }
@@ -117,8 +118,7 @@ gst_ndi_audio_src_clear_queue(GstNdiAudioSrc* self) {
 }
 
 static void
-gst_ndi_audio_src_finalize(GObject* object)
-{
+gst_ndi_audio_src_finalize(GObject* object) {
     GstNdiAudioSrc* self = GST_NDI_AUDIO_SRC_CAST(object);
     
     GST_DEBUG_OBJECT(self, "Finalize");
@@ -236,17 +236,27 @@ gst_ndi_audio_src_get_input_caps(GstNdiAudioSrc* self) {
 }
 
 static void
-gst_ndi_audio_src_got_frame(GstElement* ndi_device, gint8* buffer, guint size, guint stride) {
+gst_ndi_audio_src_got_frame(GstElement* ndi_device, gint8* buffer, guint size, guint stride, gboolean is_caps_changed) {
     GstNdiAudioSrc* self = GST_NDI_AUDIO_SRC(ndi_device);
 
     GST_DEBUG_OBJECT(self, "Got frame %u", size);
-    if (self->caps == NULL) {
+    if (is_caps_changed) {
+        if (self->caps != NULL) {
+            GST_DEBUG_OBJECT(self, "caps changed");
+            self->is_eos = TRUE;
+            gst_caps_unref(self->caps);
+        }
+
         g_mutex_lock(&self->caps_mutex);
         self->caps = gst_ndi_audio_src_get_input_caps(self);
         g_cond_signal(&self->caps_cond);
         g_mutex_unlock(&self->caps_mutex);
 
         GST_DEBUG_OBJECT(self, "caps %" GST_PTR_FORMAT, self->caps);
+    }
+
+    if (self->is_eos) {
+        return;
     }
 
     GstBuffer* tmp = gst_buffer_new_allocate(NULL, size, NULL);
@@ -412,6 +422,12 @@ static void gst_ndi_audio_src_get_times(GstBaseSrc* src, GstBuffer* buffer,
 
 GstFlowReturn gst_ndi_audio_src_create(GstPushSrc* pushsrc, GstBuffer** buffer) {
     GstNdiAudioSrc* self = GST_NDI_AUDIO_SRC(pushsrc);
+
+    if (self->is_eos) {
+        GST_DEBUG_OBJECT(self, "Caps was changed. EOS");
+        *buffer = NULL;
+        return GST_FLOW_EOS;
+    }
 
     GstBuffer* buf = g_async_queue_timeout_pop(self->queue, 100000);
     if (!buf) {

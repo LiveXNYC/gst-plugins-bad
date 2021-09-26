@@ -119,6 +119,7 @@ gst_ndi_video_src_init(GstNdiVideoSrc* self)
     self->caps = NULL;
     self->queue = g_async_queue_new();
     self->last_buffer = NULL;
+    self->is_eos = FALSE;
 }
 
 static void
@@ -365,6 +366,12 @@ gst_ndi_video_src_create(GstPushSrc* pushsrc, GstBuffer** buffer)
 {
     GstNdiVideoSrc* self = GST_NDI_VIDEO_SRC(pushsrc);
 
+    if (self->is_eos) {
+        GST_DEBUG_OBJECT(self, "Caps was changed. EOS");
+        *buffer = NULL;
+        return GST_FLOW_EOS;
+    }
+
     GstBuffer* buf = g_async_queue_timeout_pop(self->queue, 100000);
     if (buf) {
         //GST_DEBUG_OBJECT(self, "Got a buffer. Total: %i", g_async_queue_length(self->queue));
@@ -413,23 +420,24 @@ gst_ndi_video_src_create(GstPushSrc* pushsrc, GstBuffer** buffer)
 }
 
 static void 
-gst_ndi_video_src_got_frame(GstElement* ndi_device, gint8* buffer, guint size, bool is_caps_changed) {
+gst_ndi_video_src_got_frame(GstElement* ndi_device, gint8* buffer, guint size, gboolean is_caps_changed) {
     GstNdiVideoSrc* self = GST_NDI_VIDEO_SRC(ndi_device);
 
-    if (self->caps == NULL || is_caps_changed) {
-
+    if (is_caps_changed) {
         if (self->caps != NULL) {
+            GST_DEBUG_OBJECT(self, "caps changed");
+            self->is_eos = TRUE;
             gst_caps_unref(self->caps);
-        }
-        
-        self->caps = gst_ndi_video_src_get_input_caps(self);
-        
-        if (is_caps_changed) {
-            gst_base_src_set_caps(GST_BASE_SRC(self), self->caps);
+
         }
 
-        GST_DEBUG_OBJECT(self, "caps %" GST_PTR_FORMAT, self->caps);
+        self->caps = gst_ndi_video_src_get_input_caps(self);
+        GST_DEBUG_OBJECT(self, "new caps %" GST_PTR_FORMAT, self->caps);
         GST_DEBUG_OBJECT(self, "PAR %.03f", self->input->picture_aspect_ratio);
+    }
+
+    if (self->is_eos) {
+        return;
     }
 
     GstBuffer* buf = gst_buffer_new_allocate(NULL, size, NULL);
