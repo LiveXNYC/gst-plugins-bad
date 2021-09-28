@@ -63,7 +63,7 @@ gst_ndi_audio_src_class_init(GstNdiAudioSrcClass* klass)
 
     basesrc_class->start = GST_DEBUG_FUNCPTR(gst_ndi_audio_src_start);
     basesrc_class->stop = GST_DEBUG_FUNCPTR(gst_ndi_audio_src_stop);
-    basesrc_class->set_caps = GST_DEBUG_FUNCPTR(gst_ndi_audio_src_set_caps);
+    //basesrc_class->set_caps = GST_DEBUG_FUNCPTR(gst_ndi_audio_src_set_caps);
     basesrc_class->get_caps = GST_DEBUG_FUNCPTR(gst_ndi_audio_src_get_caps);
     basesrc_class->fixate = GST_DEBUG_FUNCPTR(gst_ndi_audio_src_fixate);
     basesrc_class->unlock = GST_DEBUG_FUNCPTR(gst_ndi_audio_src_unlock);
@@ -240,7 +240,7 @@ gst_ndi_audio_src_got_frame(GstElement* ndi_device, gint8* buffer, guint size, g
     GstNdiAudioSrc* self = GST_NDI_AUDIO_SRC(ndi_device);
 
     GST_DEBUG_OBJECT(self, "Got frame %u", size);
-    if (is_caps_changed) {
+    if (is_caps_changed || self->caps == NULL) {
         if (self->caps != NULL) {
             GST_DEBUG_OBJECT(self, "caps changed");
             self->is_eos = TRUE;
@@ -437,6 +437,15 @@ GstFlowReturn gst_ndi_audio_src_create(GstPushSrc* pushsrc, GstBuffer** buffer) 
         gst_buffer_memset(buf, 0, 0, size);
     }
 
+    GstClock* clock = gst_element_get_clock(GST_ELEMENT(pushsrc));
+    GstClockTime t =
+        GST_CLOCK_DIFF(gst_element_get_base_time(GST_ELEMENT(pushsrc)), gst_clock_get_time(clock));
+    gst_object_unref(clock);
+
+    GST_BUFFER_PTS(buf) = t + GST_BUFFER_DURATION(buf);
+
+    GST_DEBUG_OBJECT(self, "create for ts %" GST_TIME_FORMAT" %"GST_TIME_FORMAT, GST_TIME_ARGS(t), GST_TIME_ARGS(GST_BUFFER_PTS(buf)));
+    
     *buffer = buf;
     
     return GST_FLOW_OK;

@@ -92,7 +92,7 @@ gst_ndi_video_src_class_init(GstNdiVideoSrcClass* klass)
 
     basesrc_class->start = GST_DEBUG_FUNCPTR(gst_ndi_video_src_start);
     basesrc_class->stop = GST_DEBUG_FUNCPTR(gst_ndi_video_src_stop);
-    basesrc_class->set_caps = GST_DEBUG_FUNCPTR(gst_ndi_video_src_set_caps);
+    //basesrc_class->set_caps = GST_DEBUG_FUNCPTR(gst_ndi_video_src_set_caps);
     basesrc_class->get_caps = GST_DEBUG_FUNCPTR(gst_ndi_video_src_get_caps);
     basesrc_class->fixate = GST_DEBUG_FUNCPTR(gst_ndi_video_src_fixate);
     basesrc_class->unlock = GST_DEBUG_FUNCPTR(gst_ndi_video_src_unlock);
@@ -423,7 +423,7 @@ static void
 gst_ndi_video_src_got_frame(GstElement* ndi_device, gint8* buffer, guint size, gboolean is_caps_changed) {
     GstNdiVideoSrc* self = GST_NDI_VIDEO_SRC(ndi_device);
 
-    if (is_caps_changed) {
+    if (is_caps_changed || self->caps == NULL) {
         if (self->caps != NULL) {
             GST_DEBUG_OBJECT(self, "caps changed");
             self->is_eos = TRUE;
