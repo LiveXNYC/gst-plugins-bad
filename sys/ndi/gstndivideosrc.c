@@ -120,6 +120,7 @@ gst_ndi_video_src_init(GstNdiVideoSrc* self)
     self->queue = g_async_queue_new();
     self->last_buffer = NULL;
     self->is_eos = FALSE;
+    self->buffer_duration = GST_MSECOND;
 }
 
 static void
@@ -203,24 +204,29 @@ gst_ndi_video_src_set_property(GObject* object, guint prop_id,
 
 static GstCaps*
 gst_ndi_video_src_get_input_caps(GstNdiVideoSrc* self) {
-    if (self->input == NULL) {
-        return NULL;
-    }
+    GstCaps* caps = NULL;
+    g_mutex_lock(&self->input_mutex);
+    if (self->input != NULL) {
+        gint dest_n = 1, dest_d = 1;
+        if (self->input->picture_aspect_ratio != 0) {
+            double par = (double)(self->input->yres * self->input->picture_aspect_ratio) / self->input->xres;
+            gst_util_double_to_fraction(par, &dest_n, &dest_d);
+        }
 
-    gint dest_n = 1, dest_d = 1;
-    if (self->input->picture_aspect_ratio != 0) {
-        double par = (double)(self->input->yres * self->input->picture_aspect_ratio) / self->input->xres;
-        gst_util_double_to_fraction(par, &dest_n, &dest_d);
+        caps = gst_caps_new_simple("video/x-raw",
+            "format", G_TYPE_STRING, gst_ndi_util_get_format(self->input->FourCC),
+            "width", G_TYPE_INT, (int)self->input->xres,
+            "height", G_TYPE_INT, (int)self->input->yres,
+            "framerate", GST_TYPE_FRACTION, self->input->frame_rate_N, self->input->frame_rate_D,
+            "pixel-aspect-ratio", GST_TYPE_FRACTION, dest_n, dest_d,
+            "interlace-mode", G_TYPE_STRING, gst_ndi_util_get_frame_format(self->input->frame_format_type),
+            NULL);
+        self->buffer_duration = gst_util_uint64_scale(GST_SECOND, self->input->frame_rate_D, self->input->frame_rate_N);
+        GST_DEBUG_OBJECT(self, "PAR %.03f", self->input->picture_aspect_ratio);
     }
+    g_mutex_unlock(&self->input_mutex);
 
-    return gst_caps_new_simple("video/x-raw",
-        "format", G_TYPE_STRING, gst_ndi_util_get_format(self->input->FourCC),
-        "width", G_TYPE_INT, (int)self->input->xres,
-        "height", G_TYPE_INT, (int)self->input->yres,
-        "framerate", GST_TYPE_FRACTION, self->input->frame_rate_N, self->input->frame_rate_D,
-        "pixel-aspect-ratio", GST_TYPE_FRACTION, dest_n, dest_d,
-        "interlace-mode", G_TYPE_STRING, gst_ndi_util_get_frame_format(self->input->frame_format_type),
-        NULL);
+    return caps;
 }
 
 static gboolean
@@ -396,9 +402,8 @@ gst_ndi_video_src_create(GstPushSrc* pushsrc, GstBuffer** buffer)
             GST_CLOCK_DIFF(gst_element_get_base_time(GST_ELEMENT(pushsrc)), gst_clock_get_time(clock));
         gst_object_unref(clock);
         
-        guint64 buffer_duration = gst_util_uint64_scale(GST_SECOND, self->input->frame_rate_D, self->input->frame_rate_N);
-        GST_BUFFER_PTS(buf) = t + buffer_duration;// self->n_frames * buffer_duration;
-        GST_BUFFER_DURATION(buf) = buffer_duration;
+        GST_BUFFER_PTS(buf) = t + self->buffer_duration;
+        GST_BUFFER_DURATION(buf) = self->buffer_duration;
 
         GST_BUFFER_OFFSET(buf) = self->n_frames;
         GST_BUFFER_OFFSET_END(buf) = self->n_frames + 1;
@@ -428,12 +433,10 @@ gst_ndi_video_src_got_frame(GstElement* ndi_device, gint8* buffer, guint size, g
             GST_DEBUG_OBJECT(self, "caps changed");
             self->is_eos = TRUE;
             gst_caps_unref(self->caps);
-
         }
 
         self->caps = gst_ndi_video_src_get_input_caps(self);
         GST_DEBUG_OBJECT(self, "new caps %" GST_PTR_FORMAT, self->caps);
-        GST_DEBUG_OBJECT(self, "PAR %.03f", self->input->picture_aspect_ratio);
     }
 
     if (self->is_eos) {
@@ -455,6 +458,7 @@ gst_ndi_video_src_got_frame(GstElement* ndi_device, gint8* buffer, guint size, g
 
 static gboolean
 gst_ndi_video_src_acquire_input(GstNdiVideoSrc* self) {
+    g_mutex_lock(&self->input_mutex);
     if (self->input == NULL) {
         GST_DEBUG_OBJECT(self, "Acquire Input");
         self->input = gst_ndi_device_acquire_input(self->device_path, GST_ELEMENT(self), FALSE);
@@ -465,18 +469,21 @@ gst_ndi_video_src_acquire_input(GstNdiVideoSrc* self) {
             GST_DEBUG_OBJECT(self, "Acquire Input FAILED");
         }
     }
+    g_mutex_unlock(&self->input_mutex);
 
     return (self->input != NULL);
 }
 
 static void 
 gst_ndi_video_src_release_input(GstNdiVideoSrc* self) {
+    g_mutex_lock(&self->input_mutex);
     if (self->input != NULL) {
         GST_DEBUG_OBJECT(self, "Release Input");
         self->input->got_video_frame = NULL;
         gst_ndi_device_release_input(self->device_path, GST_ELEMENT(self), FALSE);
         self->input = NULL;
     }
+    g_mutex_unlock(&self->input_mutex);
 }
 
 static gboolean 
@@ -486,6 +493,7 @@ gst_ndi_video_src_query(GstBaseSrc* bsrc, GstQuery* query) {
 
     switch (GST_QUERY_TYPE(query)) {
     case GST_QUERY_LATENCY: {
+        g_mutex_lock(&self->input_mutex);
         if (self->input) {
             GstClockTime min, max;
 
@@ -498,7 +506,7 @@ gst_ndi_video_src_query(GstBaseSrc* bsrc, GstQuery* query) {
         else {
             ret = FALSE;
         }
-
+        g_mutex_unlock(&self->input_mutex);
         break;
     }
     default:

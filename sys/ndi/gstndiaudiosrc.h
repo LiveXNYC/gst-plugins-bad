@@ -23,6 +23,7 @@ struct _GstNdiAudioSrc
 	GstPushSrc parent;
 	
 	GstNdiInput* input;
+	GMutex input_mutex;
 	gchar* device_path;
 	gchar* device_name;
 	GstCaps * caps;

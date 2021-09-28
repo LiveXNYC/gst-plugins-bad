@@ -21,6 +21,7 @@ struct _GstNdiVideoSrc
     GstPushSrc parent;
 
     GstNdiInput* input;
+    GMutex input_mutex;
     gchar* device_path;
     gchar* device_name;
     GstCaps* caps;
@@ -30,6 +31,7 @@ struct _GstNdiVideoSrc
     guint64 n_frames;
     GstClockTime timestamp_offset;
     gboolean is_eos;
+    guint64 buffer_duration;
 };
 
 struct _GstNdiVideoSrcClass
