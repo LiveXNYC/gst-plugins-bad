@@ -44,6 +44,7 @@ enum
   PROP_0,
   PROP_CONFIG_INTERVAL,
   PROP_UPDATE_TIMECODE,
+  PROP_KEY_FRAME_TOTAL,
 };
 
 enum
@@ -80,6 +81,8 @@ enum
   GST_H264_PARSE_SEI_ACTIVE = 1,
   GST_H264_PARSE_SEI_PARSED = 2,
 };
+
+#define DEFAULT_KEY_FRAME_TOTAL (0)
 
 #define GST_H264_PARSE_STATE_VALID(parse, expected_state) \
   (((parse)->state & (expected_state)) == (expected_state))
@@ -169,6 +172,13 @@ gst_h264_parse_class_init (GstH264ParseClass * klass)
           "VUI and pic_struct_present_flag of VUI must be non-zero",
           DEFAULT_CONFIG_INTERVAL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
+  g_object_class_install_property(gobject_class, PROP_KEY_FRAME_TOTAL,
+      g_param_spec_uint64("key-frame-total", "Total amount of key frames",
+          "Total amount of key frames",
+          0, G_MAXUINT64, DEFAULT_KEY_FRAME_TOTAL,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+
   /* Override BaseParse vfuncs */
   parse_class->start = GST_DEBUG_FUNCPTR (gst_h264_parse_start);
   parse_class->stop = GST_DEBUG_FUNCPTR (gst_h264_parse_stop);
@@ -204,6 +214,7 @@ gst_h264_parse_init (GstH264Parse * h264parse)
   h264parse->cpb_removal_delay_length_minus1 = 0;
   h264parse->dpb_output_delay_length_minus1 = 0;
   h264parse->time_offset_length = 24;
+  h264parse->total_key_frames = DEFAULT_KEY_FRAME_TOTAL;
 }
 
 static void
@@ -1092,8 +1103,10 @@ gst_h264_parse_process_nal (GstH264Parse * h264parse, GstH264NalUnit * nalu)
           "parse result %d, first MB: %u, slice type: %u",
           pres, slice.first_mb_in_slice, slice.type);
       if (pres == GST_H264_PARSER_OK) {
-        if (GST_H264_IS_I_SLICE (&slice) || GST_H264_IS_SI_SLICE (&slice))
-          h264parse->keyframe = TRUE;
+          if (GST_H264_IS_I_SLICE(&slice) || GST_H264_IS_SI_SLICE(&slice)) {
+              h264parse->keyframe = TRUE;
+              ++h264parse->total_key_frames;
+          }
         else if (GST_H264_IS_P_SLICE (&slice)
             || GST_H264_IS_SP_SLICE (&slice))
           h264parse->predicted = TRUE;
@@ -3796,6 +3809,9 @@ gst_h264_parse_set_property (GObject * object, guint prop_id,
     case PROP_UPDATE_TIMECODE:
       parse->update_timecode = g_value_get_boolean (value);
       break;
+    case PROP_KEY_FRAME_TOTAL:
+        parse->total_key_frames = g_value_get_uint64(value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -3816,6 +3832,9 @@ gst_h264_parse_get_property (GObject * object, guint prop_id,
       break;
     case PROP_UPDATE_TIMECODE:
       g_value_set_boolean (value, parse->update_timecode);
+      break;
+    case PROP_KEY_FRAME_TOTAL:
+      g_value_set_uint64(value, parse->total_key_frames);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);

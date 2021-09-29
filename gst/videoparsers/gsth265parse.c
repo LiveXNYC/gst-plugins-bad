@@ -38,6 +38,7 @@ enum
   PROP_0,
   PROP_CONFIG_INTERVAL,
   PROP_UPDATE_TIMECODE,
+  PROP_KEY_FRAME_TOTAL,
 };
 
 enum
@@ -74,6 +75,8 @@ enum
   GST_H265_PARSE_SEI_ACTIVE = 1,
   GST_H265_PARSE_SEI_PARSED = 2,
 };
+
+#define DEFAULT_KEY_FRAME_TOTAL (0)
 
 #define GST_H265_PARSE_STATE_VALID(parse, expected_state) \
   (((parse)->state & (expected_state)) == (expected_state))
@@ -148,6 +151,12 @@ gst_h265_parse_class_init (GstH265ParseClass * klass)
           "is attached to incoming buffer. ",
           FALSE, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
+  g_object_class_install_property(gobject_class, PROP_KEY_FRAME_TOTAL,
+      g_param_spec_uint64("key-frame-total", "Total amount of key frames",
+          "Total amount of key frames",
+          0, G_MAXUINT64, DEFAULT_KEY_FRAME_TOTAL,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
   /* Override BaseParse vfuncs */
   parse_class->start = GST_DEBUG_FUNCPTR (gst_h265_parse_start);
   parse_class->stop = GST_DEBUG_FUNCPTR (gst_h265_parse_stop);
@@ -176,6 +185,7 @@ gst_h265_parse_init (GstH265Parse * h265parse)
   gst_base_parse_set_infer_ts (GST_BASE_PARSE (h265parse), FALSE);
   GST_PAD_SET_ACCEPT_INTERSECT (GST_BASE_PARSE_SINK_PAD (h265parse));
   GST_PAD_SET_ACCEPT_TEMPLATE (GST_BASE_PARSE_SINK_PAD (h265parse));
+  h265parse->total_key_frames = DEFAULT_KEY_FRAME_TOTAL;
 }
 
 
@@ -893,12 +903,14 @@ gst_h265_parse_process_nal (GstH265Parse * h265parse, GstH265NalUnit * nalu)
       pres = gst_h265_parser_parse_slice_hdr (nalparser, nalu, &slice);
 
       if (pres == GST_H265_PARSER_OK) {
-        if (GST_H265_IS_I_SLICE (&slice))
-          h265parse->keyframe = TRUE;
-        else if (GST_H265_IS_P_SLICE (&slice))
-          h265parse->predicted = TRUE;
-        else if (GST_H265_IS_B_SLICE (&slice))
-          h265parse->bidirectional = TRUE;
+          if (GST_H265_IS_I_SLICE(&slice)) {
+              h265parse->keyframe = TRUE;
+              ++h265parse->total_key_frames;
+          } 
+          else if (GST_H265_IS_P_SLICE(&slice))
+            h265parse->predicted = TRUE;
+          else if (GST_H265_IS_B_SLICE (&slice))
+            h265parse->bidirectional = TRUE;
 
         h265parse->state |= GST_H265_PARSE_STATE_GOT_SLICE;
 
@@ -3307,6 +3319,9 @@ gst_h265_parse_set_property (GObject * object, guint prop_id,
     case PROP_UPDATE_TIMECODE:
         parse->update_timecode = g_value_get_boolean(value);
         break;
+    case PROP_KEY_FRAME_TOTAL:
+        parse->total_key_frames = g_value_get_uint64(value);
+        break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -3326,6 +3341,9 @@ gst_h265_parse_get_property (GObject * object, guint prop_id, GValue * value,
       break;
     case PROP_UPDATE_TIMECODE:
         g_value_set_boolean(value, parse->update_timecode);
+        break;
+    case PROP_KEY_FRAME_TOTAL:
+        g_value_set_uint64(value, parse->total_key_frames);
         break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);

@@ -111,6 +111,7 @@ struct _GstH265Parse
   gboolean bidirectional;
   gboolean header;
   gint force_time_code_sei_pos;
+  guint64 total_key_frames;
   /* AU state */
   gboolean picture_start;
 

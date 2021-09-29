@@ -136,6 +136,7 @@ struct _GstH264Parse
   guint8 cpb_removal_delay_length_minus1;
   guint8 dpb_output_delay_length_minus1;
   guint8 time_offset_length;
+  guint64 total_key_frames;
   /* AU state */
   gboolean picture_start;
 
