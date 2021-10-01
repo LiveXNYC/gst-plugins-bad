@@ -4,7 +4,6 @@
 
 #include "gstndidevice.h"
 #include "gstndiutil.h"
-#include "gstndifinder.h"
 #include <ndi/Processing.NDI.Lib.h>
 
 GST_DEBUG_CATEGORY_EXTERN(gst_ndi_debug);
@@ -28,8 +27,6 @@ struct _Device
 };
 
 static GPtrArray * devices = NULL;
-static GMutex ref_mutex;
-static guint ref_counter = 0;
 
 static void gst_ndi_device_get_property(GObject* object,
     guint prop_id, GValue* value, GParamSpec* pspec);
@@ -40,7 +37,6 @@ static GstElement* gst_ndi_device_create_element(GstDevice* device,
     const gchar* name);
 static void gst_ndi_device_update(const NDIlib_source_t* source, uint32_t no_sources);
 static gpointer thread_func(gpointer data);
-static guint gst_ndi_device_get_ref_counter(void);
 static void gst_ndi_device_remove_device(Device* device);
 
 static void
@@ -219,16 +215,9 @@ gst_ndi_device_update(const NDIlib_source_t* p_sources, uint32_t no_sources) {
 }
 
 static void
-gst_ndi_device_create_finder(void) {
-    gst_ndi_finder_create();
-}
-
-static void
-gst_ndi_update_devices(void) {
-    gst_ndi_device_create_finder();
-
+gst_ndi_update_devices(GstNdiFinder* finder) {
     uint32_t no_sources = 0;
-    const NDIlib_source_t* p_sources = gst_ndi_finder_get_sources(&no_sources);
+    const NDIlib_source_t* p_sources = gst_ndi_finder_get_sources(finder, &no_sources);
     gst_ndi_device_update(p_sources, no_sources);
 }
 
@@ -395,7 +384,7 @@ static gpointer
 
 GstNdiInput *
 gst_ndi_device_acquire_input(const char* id, GstElement * src, gboolean is_audio) {
-    gst_ndi_update_devices();
+    //gst_ndi_update_devices();
 
     if (!devices) {
 
@@ -460,28 +449,6 @@ gst_ndi_device_acquire_input(const char* id, GstElement * src, gboolean is_audio
     return NULL;
 }
 
-void
-gst_ndi_device_src_send_caps_event(GstBaseSrc* src, GstCaps* caps) {
-    if (src == NULL) {
-        return;
-    }
-
-    GstPad* srcpad = GST_BASE_SRC_PAD(src);
-    GstEvent* event = gst_pad_get_sticky_event(srcpad, GST_EVENT_CAPS, 0);
-    if (event) {
-        GstCaps* event_caps;
-        gst_event_parse_caps(event, &event_caps);
-        if (caps != event_caps) {
-            gst_event_unref(event);
-            event = gst_event_new_caps(caps);
-        }
-    }
-    else {
-        event = gst_event_new_caps(caps);
-    }
-    gst_pad_push_event(srcpad, event);
-}
-
 static void 
 gst_ndi_device_stop_capture_thread(Device* device) {
     if (device->input.capture_thread) {
@@ -540,12 +507,7 @@ gst_ndi_device_remove_device(Device* device) {
 
 static void
 gst_ndi_device_release_devices(void) {
-
-    return;
-
     GST_DEBUG("Release devices");
-    gst_ndi_finder_release();
-
     if (!devices) {
         return;
     }
@@ -560,9 +522,9 @@ gst_ndi_device_release_devices(void) {
 }
 
 GList*
-gst_ndi_device_get_devices(void) {
+gst_ndi_device_get_devices(GstNdiFinder* finder) {
     GList* list = NULL;
-    gst_ndi_update_devices();
+    gst_ndi_update_devices(finder);
 
     // Display all the sources.
     for (guint i = 0; i < devices->len; ++i) {
@@ -575,33 +537,5 @@ gst_ndi_device_get_devices(void) {
         list = g_list_append(list, gstDevice);
     }
 
-    if (gst_ndi_device_get_ref_counter() == 0) {
-        gst_ndi_device_release_devices();
-    }
-
     return list;
-}
-
-void gst_ndi_device_ref(void) {
-    g_mutex_lock(&ref_mutex);
-    ++ref_counter;
-    GST_DEBUG("Ref counter = %u", ref_counter);
-    g_mutex_unlock(&ref_mutex);
-}
-
-void gst_ndi_device_unref(void) {
-    g_mutex_lock(&ref_mutex);
-    --ref_counter;
-    GST_DEBUG("Ref counter = %u", ref_counter);
-    if (ref_counter == 0) gst_ndi_device_release_devices();
-    g_mutex_unlock(&ref_mutex);
-}
-
-static guint
-gst_ndi_device_get_ref_counter(void) {
-    guint rc = 0;
-    g_mutex_lock(&ref_mutex);
-    rc = ref_counter;
-    g_mutex_unlock(&ref_mutex);
-    return rc;
 }

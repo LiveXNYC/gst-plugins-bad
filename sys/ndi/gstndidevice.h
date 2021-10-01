@@ -4,6 +4,8 @@
 #include <gst/gst.h>
 #include <ndi/Processing.NDI.Lib.h>
 #include <gst/base/base.h>
+#include "gstndifinder.h"
+
 G_BEGIN_DECLS
 
 #define GST_TYPE_NDI_DEVICE          (gst_ndi_device_get_type())
@@ -24,7 +26,7 @@ struct _GstNdiDevice
     gboolean isVideo;
 };
 
-GList* gst_ndi_device_get_devices(void);
+GList* gst_ndi_device_get_devices(GstNdiFinder* finder);
 
 typedef struct _GstNdiInput GstNdiInput;
 struct _GstNdiInput {
@@ -65,9 +67,6 @@ struct _GstNdiOutput {
 
 GstNdiInput * gst_ndi_device_acquire_input(const char* id, GstElement * src, gboolean is_audio);
 void          gst_ndi_device_release_input(const char* id, GstElement * src, gboolean is_audio);
-void          gst_ndi_device_ref(void);
-void          gst_ndi_device_unref(void);
-void          gst_ndi_device_src_send_caps_event(GstBaseSrc* element, GstCaps* caps);
 
 GType gst_ndi_device_get_type(void);
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(GstNdiDevice, gst_object_unref)

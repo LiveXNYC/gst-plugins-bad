@@ -2,11 +2,13 @@
 
 #include <gst/gst.h>
 
-GST_DEBUG_CATEGORY_EXTERN(gst_ndi_debug);
-#define GST_CAT_DEFAULT gst_ndi_debug
+GST_DEBUG_CATEGORY_STATIC(gst_ndi_finder_debug);
+#define GST_CAT_DEFAULT gst_ndi_finder_debug
 
-typedef struct _Finder Finder;
-struct _Finder
+#define gst_ndi_finder_parent_class parent_class
+G_DEFINE_TYPE(GstNdiFinder, gst_ndi_finder, GST_TYPE_OBJECT);
+
+struct _GstNdiFinderPrivate
 {
     GThread* finder_thread;
     gboolean is_finder_terminated;
@@ -15,58 +17,116 @@ struct _Finder
     gboolean is_finder_started;
     GMutex data_mutex;
     GCond  data_cond;
+
+    GMutex callback_mutex;
+    GstDeviceProvider* device_provider;
+    Device_Changed callback;
+    uint32_t previous_no_sources;
 };
 
-static Finder* finder = NULL;
+static void
+gst_ndi_finder_finalize(GObject* object);
+
+static void
+gst_ndi_finder_class_init(GstNdiFinderClass* klass)
+{
+    GObjectClass* gobject_class = G_OBJECT_CLASS(klass);
+
+    gobject_class->finalize = gst_ndi_finder_finalize;
+
+    GST_DEBUG_CATEGORY_INIT(gst_ndi_finder_debug, "ndifinder",
+        0, "debug category for ndifinder element");
+}
+
+static void
+gst_ndi_finder_init(GstNdiFinder* self)
+{
+    self->priv = g_new0(GstNdiFinderPrivate, 1);
+    g_mutex_init(&self->priv->list_lock);
+    g_mutex_init(&self->priv->data_mutex);
+    g_mutex_init(&self->priv->callback_mutex);
+    g_cond_init(&self->priv->data_cond);
+    self->priv->callback = NULL;
+    self->priv->device_provider = NULL;
+    self->priv->previous_no_sources = 0;
+}
+
+static void
+gst_ndi_finder_finalize(GObject* object) {
+    GstNdiFinder* self = GST_NDI_FINDER_CAST(object);
+    GST_DEBUG_OBJECT(self, "Finalize");
+    g_free(self->priv);
+    self->priv = NULL;
+}
 
 static gpointer
 thread_func(gpointer data) {
+    GstNdiFinder* self = GST_NDI_FINDER_CAST(data);
+    GstNdiFinderPrivate* priv = self->priv;
+    GST_DEBUG_OBJECT(self, "Finder Thread Started");
 
-    GST_DEBUG("Finder Thread Started");
+    g_mutex_lock(&priv->data_mutex);
+    NDIlib_find_wait_for_sources(priv->pNDI_find, 500);
 
-    g_mutex_lock(&finder->data_mutex);
-    NDIlib_find_wait_for_sources(finder->pNDI_find, 500);
+    GST_DEBUG_OBJECT(self, "Finder Thread Send Signal");
 
-    GST_DEBUG("Finder Thread Send Signal");
+    priv->is_finder_started = TRUE;
+    g_cond_signal(&priv->data_cond);
+    g_mutex_unlock(&priv->data_mutex);
 
-    finder->is_finder_started = TRUE;
-    g_cond_signal(&finder->data_cond);
-    g_mutex_unlock(&finder->data_mutex);
+    gboolean is_device_changed = FALSE;
+    uint32_t no_sources = 0;
+    while (!priv->is_finder_terminated) {
+        g_mutex_lock(&priv->list_lock);
+        if (NDIlib_find_wait_for_sources(priv->pNDI_find, 100)) {
+            const NDIlib_source_t* p_sources = NDIlib_find_get_current_sources(priv->pNDI_find, &no_sources);
+            is_device_changed = priv->previous_no_sources != no_sources;
+        }
+        g_mutex_unlock(&priv->list_lock);
 
-    while (!finder->is_finder_terminated) {
-        g_mutex_lock(&finder->list_lock);
-        NDIlib_find_wait_for_sources(finder->pNDI_find, 100);
-        g_mutex_unlock(&finder->list_lock);
+
+        if (is_device_changed) {
+            GST_DEBUG_OBJECT(self, "Device changed");
+            is_device_changed = FALSE;
+            priv->previous_no_sources = no_sources;
+
+            g_mutex_lock(&priv->callback_mutex);
+            if (priv->callback && priv->device_provider) {
+                priv->callback(self, GST_OBJECT(priv->device_provider));
+            }
+            g_mutex_unlock(&priv->callback_mutex);
+        }
+
         g_usleep(100000);
     }
 
-    GST_DEBUG("Finder Thread Finished");
+    GST_DEBUG_OBJECT(self, "Finder Thread Finished");
 
     return NULL;
 }
 
-void gst_ndi_finder_create(void) {
+void gst_ndi_finder_start(GstNdiFinder* finder) {
     if (finder == NULL) {
-        finder = g_new0(Finder, 1);
-        g_mutex_init(&finder->list_lock);
-        g_mutex_init(&finder->data_mutex);
-        g_cond_init(&finder->data_cond);
+        return;
     }
 
-    if (finder->pNDI_find == NULL) {
+    GstNdiFinder* self = GST_NDI_FINDER_CAST(finder);
+    GstNdiFinderPrivate* priv = self->priv;
+    
+    if (priv->pNDI_find == NULL) {
 
         GST_DEBUG("Creating NDI finder");
 
-        finder->is_finder_started = FALSE;
-        finder->is_finder_terminated = FALSE;
+        priv->is_finder_started = FALSE;
+        priv->is_finder_terminated = FALSE;
 
         NDIlib_find_create_t p_create_settings;
         p_create_settings.show_local_sources = true;
         p_create_settings.p_extra_ips = NULL;
         p_create_settings.p_groups = NULL;
-        finder->pNDI_find = NDIlib_find_create_v2(&p_create_settings);
+        priv->pNDI_find = NDIlib_find_create_v2(&p_create_settings);
 
-        if (finder->pNDI_find == NULL) {
+        if (priv->pNDI_find == NULL) {
 
             GST_ERROR("Creating NDI finder failed");
 
@@ -76,15 +136,15 @@ void gst_ndi_finder_create(void) {
         GST_DEBUG("Creating NDI finder thread");
 
         GError* error = NULL;
-        finder->finder_thread =
-            g_thread_try_new("GstNdiFinder", thread_func, (gpointer)NULL, &error);
+        priv->finder_thread =
+            g_thread_try_new("GstNdiFinder", thread_func, (gpointer)self, &error);
 
         GST_DEBUG("Wait signal");
 
-        g_mutex_lock(&finder->data_mutex);
-        while (!finder->is_finder_started)
-            g_cond_wait(&finder->data_cond, &finder->data_mutex);
-        g_mutex_unlock(&finder->data_mutex);
+        g_mutex_lock(&priv->data_mutex);
+        while (!priv->is_finder_started)
+            g_cond_wait(&priv->data_cond, &priv->data_mutex);
+        g_mutex_unlock(&priv->data_mutex);
 
         GST_DEBUG("Signal received");
     }
@@ -93,40 +153,53 @@ void gst_ndi_finder_create(void) {
     }
 }
 
-void gst_ndi_finder_release(void) {
+void gst_ndi_finder_stop(GstNdiFinder* finder) {
     if (finder == NULL) {
         return;
     }
+    GstNdiFinder* self = GST_NDI_FINDER_CAST(finder);
+    GstNdiFinderPrivate* priv = self->priv;
 
-    if (finder->finder_thread) {
+    if (priv->finder_thread) {
         GST_DEBUG("Stopping NDI finder thread");
-        GThread* thread = g_steal_pointer(&finder->finder_thread);
-        finder->is_finder_terminated = TRUE;
+        GThread* thread = g_steal_pointer(&priv->finder_thread);
+        priv->is_finder_terminated = TRUE;
 
         g_thread_join(thread);
     }
     GST_DEBUG("Destroy NDI finder");
     // Destroy the NDI finder
-    NDIlib_find_destroy(finder->pNDI_find);
-    
-    g_free(finder);
-    finder = NULL;
+    NDIlib_find_destroy(priv->pNDI_find);
+    priv->pNDI_find = NULL;
 }
 
-const NDIlib_source_t* gst_ndi_finder_get_sources(uint32_t* no_sources) {
+const NDIlib_source_t* 
+gst_ndi_finder_get_sources(GstNdiFinder* finder, uint32_t* no_sources) {
     *no_sources = 0;
     const NDIlib_source_t* p_sources = NULL;
 
     if (finder == NULL) {
         return NULL;
     }
+    GstNdiFinder* self = GST_NDI_FINDER_CAST(finder);
+    GstNdiFinderPrivate* priv = self->priv;
 
-    if (finder->pNDI_find) {
+    if (priv->pNDI_find) {
         // Get the updated list of sources
-        g_mutex_lock(&finder->list_lock);
-        p_sources = NDIlib_find_get_current_sources(finder->pNDI_find, no_sources);
-        g_mutex_unlock(&finder->list_lock);
+        g_mutex_lock(&priv->list_lock);
+        p_sources = NDIlib_find_get_current_sources(priv->pNDI_find, no_sources);
+        g_mutex_unlock(&priv->list_lock);
     }
 
     return p_sources;
+}
+
+void 
+gst_ndi_finder_set_callback(GstNdiFinder* finder, GstObject* provider, Device_Changed callback) {
+    GstNdiFinder* self = GST_NDI_FINDER(finder);
+
+    g_mutex_lock(&self->priv->callback_mutex);
+    self->priv->device_provider = GST_DEVICE_PROVIDER(provider);
+    self->priv->callback = callback;
+    g_mutex_unlock(&self->priv->callback_mutex);
 }
