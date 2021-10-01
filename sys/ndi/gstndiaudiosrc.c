@@ -93,8 +93,6 @@ gst_ndi_audio_src_class_init(GstNdiAudioSrcClass* klass)
 static void
 gst_ndi_audio_src_init(GstNdiAudioSrc* self)
 {
-    gst_ndi_device_ref();
-
     gst_base_src_set_live(GST_BASE_SRC(self), TRUE);
     gst_base_src_set_format(GST_BASE_SRC(self), GST_FORMAT_TIME);
     
@@ -140,8 +138,6 @@ gst_ndi_audio_src_finalize(GObject* object) {
         g_async_queue_unref(self->queue);
         self->queue = NULL;
     }
-
-    gst_ndi_device_unref();
 
     G_OBJECT_CLASS(parent_class)->finalize(object);
 }

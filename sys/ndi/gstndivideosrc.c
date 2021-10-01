@@ -108,8 +108,6 @@ gst_ndi_video_src_class_init(GstNdiVideoSrcClass* klass)
 static void
 gst_ndi_video_src_init(GstNdiVideoSrc* self)
 {
-    gst_ndi_device_ref();
-
     gst_base_src_set_format(GST_BASE_SRC(self), GST_FORMAT_TIME);
     gst_base_src_set_live(GST_BASE_SRC(self), TRUE);
     gst_base_src_set_do_timestamp(GST_BASE_SRC(self), TRUE);
@@ -150,8 +148,6 @@ gst_ndi_video_src_finalize(GObject* object)
     }
 
     gst_ndi_video_src_free_last_buffer(self);
-
-    gst_ndi_device_unref();
 
     if (self->caps) {
         gst_caps_unref(self->caps);
