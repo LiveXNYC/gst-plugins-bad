@@ -76,12 +76,12 @@ gst_ndi_device_provider_finalize(GObject* object) {
     
     g_list_free(self->priv->devices);
     self->priv->devices = NULL;
-    g_free(self->priv);
-    self->priv = NULL;
     if (self->priv->finder) {
         g_object_unref(self->priv->finder);
         self->priv->finder = NULL;
     }
+    g_free(self->priv);
+    self->priv = NULL;
 
     G_OBJECT_CLASS(parent_class)->finalize(object);
 }
