@@ -399,11 +399,11 @@ gboolean gst_ndi_audio_src_query(GstBaseSrc* bsrc, GstQuery* query) {
     switch (GST_QUERY_TYPE(query)) {
     case GST_QUERY_LATENCY: {
         g_mutex_lock(&self->input_mutex);
-        if (self->input) {
+        if (self->input && self->input->is_audio_enabled) {
             GstClockTime min, max;
 
-            // TODO: calculate
-            min = GST_MSECOND * 33;
+            min = gst_util_uint64_scale_int(self->input->audio_buffer_size,
+                GST_SECOND, self->input->sample_rate * sizeof(float) * self->input->channels);
             max = 5 * min;
 
             gst_query_set_latency(query, TRUE, min, max);
