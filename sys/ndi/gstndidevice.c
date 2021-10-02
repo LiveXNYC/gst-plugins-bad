@@ -13,6 +13,7 @@ enum
 {
     PROP_0,
     PROP_DEVICE_PATH,
+    PROP_DEVICE_NAME,
 };
 
 G_DEFINE_TYPE(GstNdiDevice, gst_ndi_device, GST_TYPE_DEVICE);
@@ -35,7 +36,6 @@ static void gst_ndi_device_set_property(GObject* object,
 static void gst_ndi_device_finalize(GObject* object);
 static GstElement* gst_ndi_device_create_element(GstDevice* device,
     const gchar* name);
-static void gst_ndi_device_update(const NDIlib_source_t* source, uint32_t no_sources);
 static gpointer thread_func(gpointer data);
 static void gst_ndi_device_remove_device(Device* device);
 
@@ -52,9 +52,15 @@ gst_ndi_device_class_init(GstNdiDeviceClass* klass)
     gobject_class->finalize = gst_ndi_device_finalize;
 
     g_object_class_install_property(gobject_class, PROP_DEVICE_PATH,
-        g_param_spec_string("device", "Device string ID",
+        g_param_spec_string("device-path", "Device string ID",
             "Device strId", NULL,
             (GParamFlags)(G_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY | G_PARAM_STATIC_STRINGS)));
+
+    g_object_class_install_property(gobject_class, PROP_DEVICE_NAME,
+        g_param_spec_string("device-name", "Device Name",
+            "The human-readable device name", "",
+            G_PARAM_READWRITE | GST_PARAM_MUTABLE_READY |
+            G_PARAM_STATIC_STRINGS));
 }
 
 static void
@@ -69,6 +75,7 @@ gst_ndi_device_finalize(GObject* object)
     GstNdiDevice* self = GST_NDI_DEVICE(object);
 
     g_free(self->device_path);
+    g_free(self->device_name);
 
     G_OBJECT_CLASS(gst_ndi_device_parent_class)->finalize(object);
 }
@@ -81,6 +88,7 @@ gst_ndi_device_create_element(GstDevice* device, const gchar* name)
     GstElement* elem = gst_element_factory_make(self->isVideo ? "ndivideosrc" : "ndiaudiosrc", name);
     if (elem) {
         g_object_set(elem, "device-path", self->device_path, NULL);
+        g_object_set(elem, "device-name", self->device_name, NULL);
     }
 
     return elem;
@@ -95,6 +103,9 @@ gst_ndi_device_get_property(GObject* object, guint prop_id,
     switch (prop_id) {
     case PROP_DEVICE_PATH:
         g_value_set_string(value, self->device_path);
+        break;
+    case PROP_DEVICE_NAME:
+        g_value_set_string(value, self->device_name);
         break;
     default:
         G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
@@ -112,6 +123,11 @@ gst_ndi_device_set_property(GObject* object, guint prop_id,
     case PROP_DEVICE_PATH:
         self->device_path = g_value_dup_string(value);
         break;
+    case PROP_DEVICE_NAME:
+        g_free(self->device_name);
+        self->device_name = g_value_dup_string(value);
+        GST_DEBUG_OBJECT(self, "%s", self->device_name);
+        break;
     default:
         G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
         break;
@@ -119,7 +135,7 @@ gst_ndi_device_set_property(GObject* object, guint prop_id,
 }
 
 static GstDevice*
-gst_ndi_device_provider_create_device(const char* id, const char* name, gboolean isVideo) {
+gst_ndi_device_provider_create_src_device(const char* id, const char* name, gboolean isVideo) {
     GstStructure* props = gst_structure_new("ndi-proplist",
         "device.api", G_TYPE_STRING, "NDI",
         "device.strid", G_TYPE_STRING, GST_STR_NULL(id),
@@ -129,7 +145,8 @@ gst_ndi_device_provider_create_device(const char* id, const char* name, gboolean
         ? gst_util_create_default_video_caps()
         : gst_util_create_default_audio_caps();
 
-    GstDevice* device = g_object_new(GST_TYPE_NDI_DEVICE, "device", id,
+    GstDevice* device = g_object_new(GST_TYPE_NDI_DEVICE, "device-path", id, 
+        "device-name", name,
         "display-name", name,
         "caps", caps,
         "device-class", isVideo ? "Video/Source" : "Audio/Source",
@@ -144,6 +161,16 @@ gst_ndi_device_provider_create_device(const char* id, const char* name, gboolean
     return device;
 }
 
+GstDevice*
+gst_ndi_device_provider_create_video_src_device(const char* id, const char* name) {
+    return gst_ndi_device_provider_create_src_device(id, name, TRUE);
+}
+
+GstDevice*
+gst_ndi_device_provider_create_audio_src_device(const char* id, const char* name) {
+    return gst_ndi_device_provider_create_src_device(id, name, FALSE);
+}
+
 static Device*
 gst_ndi_device_create_device(const gchar* p_url_address, const gchar* p_ndi_name)
 {
@@ -153,80 +180,6 @@ gst_ndi_device_create_device(const gchar* p_url_address, const gchar* p_ndi_name
     g_mutex_init(&device->input.lock);
 
     return device;
-}
-
-static void
-gst_ndi_device_update(const NDIlib_source_t* p_sources, uint32_t no_sources) {
-    if (devices == NULL) {
-        devices = g_ptr_array_new();
-    }
-
-    if (p_sources == NULL || no_sources == 0) {
-        while (devices->len > 0) {
-            Device* device = (Device*)g_ptr_array_index(devices, 0);
-            GST_DEBUG("Release device id = %s", device->id);
-            gst_ndi_device_remove_device(device);
-        }
-        return;
-    }
-
-    GST_DEBUG("Updating devices");
-
-    for (guint i = 0; i < devices->len; ) {
-        Device* device = (Device*)g_ptr_array_index(devices, i);
-        gboolean isFind = FALSE;
-        for (uint32_t j = 0; j < no_sources; j++) {
-            const NDIlib_source_t* source = p_sources + j;
-            if (strcmp(device->id, source->p_url_address) == 0) {
-                isFind = TRUE;
-                break;
-            }
-        }
-        ++i;
-        if (!isFind) {
-            // Remove device if it is not in use
-            if (!device->input.is_started) {
-                GST_INFO("Remove device id = %s, name = %s", device->id, device->p_ndi_name);
-                gst_ndi_device_remove_device(device);
-                i = 0;
-            }
-            else {
-                GST_INFO("Device id = %s, name = %s will be removed as soon as source will free it", device->id, device->p_ndi_name);
-            }
-        }
-    }
-
-    for (uint32_t i = 0; i < no_sources; i++) {
-        const NDIlib_source_t* source = p_sources + i;
-        
-        gboolean isFind = FALSE;
-        for (guint j = 0; j < devices->len; ++j) {
-            Device* device = (Device*)g_ptr_array_index(devices, j);
-            if (strcmp(device->id, source->p_url_address) == 0) {
-                isFind = TRUE;
-
-                if (strcmp(device->p_ndi_name, source->p_ndi_name) != 0) {
-                    if (device->p_ndi_name) {
-                        g_free(device->p_ndi_name);
-                    }
-                    device->p_ndi_name = g_strdup(source->p_ndi_name);
-                }
-            }
-        }
-
-        if (!isFind) {
-            Device* device = gst_ndi_device_create_device(source->p_url_address, source->p_ndi_name);
-            g_ptr_array_add(devices, device);
-            GST_INFO("Add device id = %s, name = %s", device->id, device->p_ndi_name);
-        }
-    }
-}
-
-static void
-gst_ndi_update_devices(GstNdiFinder* finder) {
-    uint32_t no_sources = 0;
-    const NDIlib_source_t* p_sources = gst_ndi_finder_get_sources(finder, &no_sources);
-    gst_ndi_device_update(p_sources, no_sources);
 }
 
 static NDIlib_recv_instance_t
@@ -534,23 +487,4 @@ gst_ndi_device_release_devices(void) {
     }
     g_ptr_array_unref(devices);
     devices = NULL;
-}
-
-GList*
-gst_ndi_device_get_devices(GstNdiFinder* finder) {
-    GList* list = NULL;
-    gst_ndi_update_devices(finder);
-
-    // Display all the sources.
-    for (guint i = 0; i < devices->len; ++i) {
-        Device* device = (Device*)g_ptr_array_index(devices, i);
-        GST_DEBUG("id = %s", device->id);
-        GstDevice* gstDevice = gst_ndi_device_provider_create_device(device->id, device->p_ndi_name, TRUE);
-        list = g_list_append(list, gstDevice);
-
-        gstDevice = gst_ndi_device_provider_create_device(device->id, device->p_ndi_name, FALSE);
-        list = g_list_append(list, gstDevice);
-    }
-
-    return list;
 }

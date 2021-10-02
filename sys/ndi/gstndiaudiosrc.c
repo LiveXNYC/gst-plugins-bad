@@ -12,6 +12,7 @@ enum
 {
     PROP_0,
     PROP_DEVICE_PATH,
+    PROP_DEVICE_NAME,
 };
 
 static GstStaticPadTemplate src_template = GST_STATIC_PAD_TEMPLATE("src",
@@ -79,6 +80,13 @@ gst_ndi_audio_src_class_init(GstNdiAudioSrcClass* klass)
             "The device path", "",
             G_PARAM_READWRITE | GST_PARAM_MUTABLE_READY |
             G_PARAM_STATIC_STRINGS));
+
+    g_object_class_install_property(gobject_class, PROP_DEVICE_NAME,
+        g_param_spec_string("device-name", "Device Name",
+            "The human-readable device name", "",
+            G_PARAM_READWRITE | GST_PARAM_MUTABLE_READY |
+            G_PARAM_STATIC_STRINGS));
+
 
     gst_element_class_add_static_pad_template(element_class, &src_template);
 
@@ -154,6 +162,11 @@ gst_ndi_audio_src_set_property(GObject* object, guint property_id,
         self->device_path = g_value_dup_string(value);
         GST_DEBUG_OBJECT(self, "%s", self->device_path);
         break;
+    case PROP_DEVICE_NAME:
+        g_free(self->device_name);
+        self->device_name = g_value_dup_string(value);
+        GST_DEBUG_OBJECT(self, "%s", self->device_name);
+        break;
     default:
         G_OBJECT_WARN_INVALID_PROPERTY_ID(object, property_id, pspec);
         break;
@@ -169,6 +182,9 @@ gst_ndi_audio_src_get_property(GObject* object, guint property_id,
     switch (property_id) {
     case PROP_DEVICE_PATH:
         g_value_set_string(value, self->device_path);
+        break;
+    case PROP_DEVICE_NAME:
+        g_value_set_string(value, self->device_name);
         break;
     default:
         G_OBJECT_WARN_INVALID_PROPERTY_ID(object, property_id, pspec);
@@ -386,7 +402,8 @@ gboolean gst_ndi_audio_src_query(GstBaseSrc* bsrc, GstQuery* query) {
         if (self->input) {
             GstClockTime min, max;
 
-            min = gst_util_uint64_scale_ceil(GST_SECOND, self->input->frame_rate_D, self->input->frame_rate_N);
+            // TODO: calculate
+            min = GST_MSECOND * 33;
             max = 5 * min;
 
             gst_query_set_latency(query, TRUE, min, max);

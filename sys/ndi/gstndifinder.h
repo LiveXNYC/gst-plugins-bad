@@ -10,7 +10,7 @@ typedef struct _GstNdiFinder GstNdiFinder;
 typedef struct _GstNdiFinderClass GstNdiFinderClass;
 typedef struct _GstNdiFinderPrivate GstNdiFinderPrivate;
 
-typedef void(*Device_Changed)(GstNdiFinder* finder, GstObject* provider);
+typedef void(*Device_Changed)(GstObject* provider, gboolean isAdd, gchar* id, gchar* name);
 
 #define GST_TYPE_NDI_FINDER                 (gst_ndi_finder_get_type())
 #define GST_IS_NDI_FINDER(obj)              (G_TYPE_CHECK_INSTANCE_TYPE ((obj), GST_TYPE_NDI_FINDER))

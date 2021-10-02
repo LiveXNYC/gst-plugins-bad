@@ -23,7 +23,7 @@ gst_ndi_device_provider_start(GstDeviceProvider* provider);
 static void
 gst_ndi_device_provider_stop(GstDeviceProvider* provider);
 static void
-gst_ndi_device_provider_device_changed(GstNdiFinder* finder, GstObject* provider);
+gst_ndi_device_provider_device_changed(GstObject* provider, gboolean isAdd, gchar* id, gchar* name);
 static void
 gst_ndi_device_provider_finalize(GObject* object);
 static void
@@ -62,7 +62,7 @@ gst_ndi_device_provider_init(GstNdiDeviceProvider* provider)
 static void
 gst_ndi_device_provider_dispose(GObject* object) {
     GstNdiDeviceProvider* self = GST_NDI_DEVICE_PROVIDER(object);
-    GST_INFO_OBJECT(object, "Dispose");
+    GST_DEBUG_OBJECT(object, "Dispose");
     if (self->priv->finder) {
         gst_ndi_finder_stop(self->priv->finder);
     }
@@ -87,10 +87,29 @@ gst_ndi_device_provider_finalize(GObject* object) {
 }
 
 static GList*
+gst_ndi_device_provider_get_devices(GstNdiDeviceProvider* self)
+{
+    GList* list = NULL;
+    uint32_t no_sources = 0;
+    const NDIlib_source_t* p_sources = gst_ndi_finder_get_sources(self->priv->finder, &no_sources);
+    for (uint32_t i = 0; i < no_sources; i++) {
+        const NDIlib_source_t* source = p_sources + i;
+        GstDevice* gstDevice = gst_ndi_device_provider_create_video_src_device(source->p_ip_address, source->p_ndi_name);
+        list = g_list_append(list, gstDevice);
+
+        gstDevice = gst_ndi_device_provider_create_audio_src_device(source->p_ip_address, source->p_ndi_name);
+        list = g_list_append(list, gstDevice);
+    }
+
+    return list;
+}
+
+static GList*
 gst_ndi_device_provider_probe(GstDeviceProvider* provider) {
     GstNdiDeviceProvider* self = GST_NDI_DEVICE_PROVIDER(provider);
-    GST_INFO_OBJECT(self, "Probe");
-    return gst_ndi_device_get_devices(self->priv->finder);
+    GST_DEBUG_OBJECT(self, "Probe");
+
+    return gst_ndi_device_provider_get_devices(self);
 }
 
 static gboolean
@@ -101,7 +120,7 @@ gst_ndi_device_provider_start(GstDeviceProvider* provider) {
     }
     GST_DEBUG_OBJECT(self, "Start");
 
-    self->priv->devices = gst_ndi_device_get_devices(self->priv->finder);
+    self->priv->devices = gst_ndi_device_provider_get_devices(self);
     for (GList* tmp = self->priv->devices; tmp; tmp = tmp->next) {
         gst_device_provider_device_add(provider, tmp->data);
     }
@@ -118,10 +137,42 @@ gst_ndi_device_provider_stop(GstDeviceProvider* provider) {
 }
 
 static void
-gst_ndi_device_provider_device_changed(GstNdiFinder* finder, GstObject* provider) {
+gst_ndi_device_provider_device_changed(GstObject* provider, gboolean isAdd, gchar* id, gchar* name) {
     GstNdiDeviceProvider* self = GST_NDI_DEVICE_PROVIDER(provider);
     GST_INFO_OBJECT(self, "Device changed");
+    
+    if (isAdd) {
+        GstDevice* gstDevice = gst_ndi_device_provider_create_video_src_device(id, name);
+        self->priv->devices = g_list_append(self->priv->devices, gstDevice);
+        gst_device_provider_device_add(GST_DEVICE_PROVIDER(provider), gstDevice);
 
-    GList* tmp = gst_ndi_device_get_devices(finder);
-    g_list_free(tmp);
+        gstDevice = gst_ndi_device_provider_create_audio_src_device(id, name);
+        self->priv->devices = g_list_append(self->priv->devices, gstDevice);
+        gst_device_provider_device_add(GST_DEVICE_PROVIDER(provider), gstDevice);
+    }
+    else {
+        for (GList* tmp = self->priv->devices; tmp; tmp = tmp->next) {
+            GstElement* element = gst_device_create_element(GST_DEVICE(tmp->data), NULL);
+            if (element) {
+                GValue valueId = G_VALUE_INIT;
+                g_value_init(&valueId, G_TYPE_STRING);
+                g_object_get_property(G_OBJECT(element), "device-path", &valueId);
+                const gchar* _id = g_value_get_string(&valueId);
+
+                GValue valueName = G_VALUE_INIT;
+                g_value_init(&valueName, G_TYPE_STRING);
+                g_object_get_property(G_OBJECT(element), "device-name", &valueName);
+                const gchar* _name = g_value_get_string(&valueName);
+
+                if (_id && _name && strcmp(id, _id) == 0 && strcmp(name, _name) == 0) {
+                    gst_device_provider_device_remove(GST_DEVICE_PROVIDER(provider), GST_DEVICE(tmp->data));
+                }
+
+                g_value_unset(&valueName);
+                g_value_unset(&valueId);
+
+                gst_object_unref(element);
+            }
+        }
+    }
 }

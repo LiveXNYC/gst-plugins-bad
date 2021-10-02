@@ -23,10 +23,9 @@ struct _GstNdiDevice
 {
     GstDevice parent;
     gchar* device_path;
+    gchar* device_name;
     gboolean isVideo;
 };
-
-GList* gst_ndi_device_get_devices(GstNdiFinder* finder);
 
 typedef struct _GstNdiInput GstNdiInput;
 struct _GstNdiInput {
@@ -65,6 +64,10 @@ struct _GstNdiOutput {
     GMutex lock;
 };
 
+GstDevice*
+gst_ndi_device_provider_create_video_src_device(const char* id, const char* name);
+GstDevice*
+gst_ndi_device_provider_create_audio_src_device(const char* id, const char* name);
 GstNdiInput * gst_ndi_device_acquire_input(const char* id, GstElement * src, gboolean is_audio);
 void          gst_ndi_device_release_input(const char* id, GstElement * src, gboolean is_audio);
 
