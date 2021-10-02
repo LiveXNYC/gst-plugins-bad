@@ -144,6 +144,17 @@ gst_ndi_device_provider_create_device(const char* id, const char* name, gboolean
     return device;
 }
 
+static Device*
+gst_ndi_device_create_device(const gchar* p_url_address, const gchar* p_ndi_name)
+{
+    Device* device = g_new0(Device, 1);
+    device->id = g_strdup(p_url_address);
+    device->p_ndi_name = g_strdup(p_ndi_name);
+    g_mutex_init(&device->input.lock);
+
+    return device;
+}
+
 static void
 gst_ndi_device_update(const NDIlib_source_t* p_sources, uint32_t no_sources) {
     if (devices == NULL) {
@@ -204,10 +215,7 @@ gst_ndi_device_update(const NDIlib_source_t* p_sources, uint32_t no_sources) {
         }
 
         if (!isFind) {
-            Device* device = g_new0(Device, 1);
-            device->id = g_strdup(source->p_url_address);
-            device->p_ndi_name = g_strdup(source->p_ndi_name);
-            g_mutex_init(&device->input.lock);
+            Device* device = gst_ndi_device_create_device(source->p_url_address, source->p_ndi_name);
             g_ptr_array_add(devices, device);
             GST_INFO("Add device id = %s, name = %s", device->id, device->p_ndi_name);
         }
@@ -384,64 +392,71 @@ static gpointer
 
 GstNdiInput *
 gst_ndi_device_acquire_input(const char* id, GstElement * src, gboolean is_audio) {
-    //gst_ndi_update_devices();
-
-    if (!devices) {
-
-        GST_INFO("Acquire input. No devices");
-        
-        return NULL;
+    if (devices == NULL) {
+        devices = g_ptr_array_new();
     }
-
+    
     GST_INFO("Acquire input. Total devices: %d", devices->len);
 
+    Device* device = NULL;
+    gboolean is_found = FALSE;
     gboolean is_error = FALSE;
     for (guint i = 0; i < devices->len; ++i) {
-        Device* device = (Device*)g_ptr_array_index(devices, i);
+        device = (Device*)g_ptr_array_index(devices, i);
         if (strcmp(device->id, id) == 0) {
-            if (is_audio) {
-                if (device->input.audiosrc == NULL) {
-                    device->input.audiosrc = src;
-                    device->input.is_audio_enabled = TRUE;
-
-                    GST_INFO("Audio input is acquired");
-                }
-                else {
-                    GST_ERROR("Audio input is busy");
-
-                    is_error = TRUE;
-                }
-            }
-            else {
-                if (device->input.videosrc == NULL) {
-                    device->input.videosrc = src;
-                    device->input.is_video_enabled = TRUE;
-
-                    GST_INFO("Video input is acquired");
-                }
-                else {
-                    GST_ERROR("Video input is busy");
-                    
-                    is_error = TRUE;
-                }
-            }
-
-            if (!is_error) {
-                if (device->input.capture_thread == NULL) {
-
-                    GST_DEBUG("Start input thread");
-
-                    device->input.is_capture_terminated = FALSE;
-                    GError* error = NULL;
-                    device->input.capture_thread =
-                        g_thread_try_new("GstNdiInputReader", device_capture_thread_func, (gpointer)device, &error);
-                }
-
-                GST_DEBUG("ACQUIRE OK");
-                
-                return &device->input;
-            }
+            is_found = TRUE;
+            break;
         }
+    }
+
+    if (!is_found) {
+        GST_INFO("Device input not found");
+        device = gst_ndi_device_create_device(id, "");
+        g_ptr_array_add(devices, device);
+        GST_INFO("Add device id = %s, name = %s", device->id, device->p_ndi_name);
+    }
+
+    if (is_audio) {
+        if (device->input.audiosrc == NULL) {
+            device->input.audiosrc = src;
+            device->input.is_audio_enabled = TRUE;
+
+            GST_INFO("Audio input is acquired");
+        }
+        else {
+            GST_ERROR("Audio input is busy");
+
+            is_error = TRUE;
+        }
+    }
+    else {
+        if (device->input.videosrc == NULL) {
+            device->input.videosrc = src;
+            device->input.is_video_enabled = TRUE;
+
+            GST_INFO("Video input is acquired");
+        }
+        else {
+            GST_ERROR("Video input is busy");
+
+            is_error = TRUE;
+        }
+    }
+
+    if (!is_error) {
+        if (device->input.capture_thread == NULL) {
+
+            GST_DEBUG("Start input thread");
+
+            device->input.is_capture_terminated = FALSE;
+            GError* error = NULL;
+            device->input.capture_thread =
+                g_thread_try_new("GstNdiInputReader", device_capture_thread_func, (gpointer)device, &error);
+        }
+
+        GST_DEBUG("ACQUIRE OK");
+
+        return &device->input;
     }
 
     GST_ERROR("Acquire failed");
