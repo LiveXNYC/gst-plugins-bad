@@ -23,6 +23,8 @@ static GstStaticPadTemplate src_template = GST_STATIC_PAD_TEMPLATE("src",
         "layout=interleaved")
 );
 
+static int MAX_QUEUE_LENGTH = 100;
+
 #define gst_ndi_audio_src_parent_class parent_class
 G_DEFINE_TYPE(GstNdiAudioSrc, gst_ndi_audio_src, GST_TYPE_PUSH_SRC);
 
@@ -318,6 +320,12 @@ gst_ndi_audio_src_got_frame(GstElement* ndi_device, gint8* buffer, guint size, g
     }
 
     g_mutex_unlock(&self->input_mutex);
+
+    gint queue_length = g_async_queue_length(self->queue);
+    if (queue_length > MAX_QUEUE_LENGTH) {
+        GstBuffer* buffer = (GstBuffer*)g_async_queue_pop(self->queue);
+        gst_buffer_unref(buffer);
+    }
 }
 
 static void gst_ndi_audio_src_acquire_input(GstNdiAudioSrc* self) {
