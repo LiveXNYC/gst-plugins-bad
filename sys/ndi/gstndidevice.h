@@ -4,15 +4,14 @@
 #include <gst/gst.h>
 #include <ndi/Processing.NDI.Lib.h>
 #include <gst/base/base.h>
-#include "gstndifinder.h"
 
 G_BEGIN_DECLS
 
-#define GST_TYPE_NDI_DEVICE          (gst_ndi_device_get_type())
-#define GST_NDI_DEVICE(obj) (G_TYPE_CHECK_INSTANCE_CAST((obj),GST_TYPE_NDI_DEVICE,GstNdiDevice))
-
 typedef struct _GstNdiDevice GstNdiDevice;
 typedef struct _GstNdiDeviceClass GstNdiDeviceClass;
+
+#define GST_TYPE_NDI_DEVICE          (gst_ndi_device_get_type())
+#define GST_NDI_DEVICE(obj) (G_TYPE_CHECK_INSTANCE_CAST((obj),GST_TYPE_NDI_DEVICE,GstNdiDevice))
 
 struct _GstNdiDeviceClass
 {
@@ -22,54 +21,16 @@ struct _GstNdiDeviceClass
 struct _GstNdiDevice
 {
     GstDevice parent;
+
     gchar* device_path;
     gchar* device_name;
     gboolean isVideo;
-};
-
-typedef struct _GstNdiInput GstNdiInput;
-struct _GstNdiInput {
-    GMutex lock;
-    GThread* capture_thread;
-    gboolean is_capture_terminated;
-
-    gboolean is_started;
-    NDIlib_recv_instance_t pNDI_recv;
-    NDIlib_framesync_instance_t pNDI_recv_sync;
-    
-    /* Set by the video source */
-    void (*got_video_frame) (GstElement* ndi_device, gint8* buffer, guint size, gboolean is_caps_changed);
-    GstElement* videosrc;
-    gboolean is_video_enabled;
-    int xres;
-    int yres;
-    int frame_rate_N;
-    int frame_rate_D;
-    float picture_aspect_ratio;
-    NDIlib_frame_format_type_e frame_format_type;
-    NDIlib_FourCC_video_type_e FourCC;
-    int stride;
-
-    /* Set by the audio source */
-    void (*got_audio_frame) (GstElement* ndi_device, gint8* buffer, guint size, guint stride, gboolean is_caps_changed);
-    GstElement* audiosrc;
-    gboolean is_audio_enabled;
-    guint channels;
-    guint sample_rate;
-    guint audio_buffer_size;
-};
-
-typedef struct _GstNdiOutput GstNdiOutput;
-struct _GstNdiOutput {
-    GMutex lock;
 };
 
 GstDevice*
 gst_ndi_device_provider_create_video_src_device(const char* id, const char* name);
 GstDevice*
 gst_ndi_device_provider_create_audio_src_device(const char* id, const char* name);
-GstNdiInput * gst_ndi_device_acquire_input(const char* id, GstElement * src, gboolean is_audio);
-void          gst_ndi_device_release_input(const char* id, GstElement * src, gboolean is_audio);
 
 GType gst_ndi_device_get_type(void);
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(GstNdiDevice, gst_object_unref)

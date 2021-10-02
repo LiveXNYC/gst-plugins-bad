@@ -2,6 +2,8 @@ ndi_sources = [
   'gstndi.c',
   'gstndifinder.c',
   'gstndidevice.c',
+  'gstndiinput.c',
+  'gstndioutput.c',
   'gstndideviceprovider.c',
   'gstndiutil.c',
   'gstndivideosrc.c',

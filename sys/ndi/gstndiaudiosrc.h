@@ -4,7 +4,7 @@
 #include <gst/gst.h>
 #include <gst/audio/audio.h>
 #include <gst/audio/gstaudiosrc.h>
-#include "gstndidevice.h"
+#include "gstndiinput.h"
 
 G_BEGIN_DECLS
 
