@@ -63,51 +63,6 @@ gst_ndi_util_get_frame_format(NDIlib_frame_format_type_e frameFormat) {
     return res;
 }
 
-NDIlib_video_frame_v2_t gst_ndi_util_get_video_frame(NDIlib_recv_instance_t instance, gint timeout) {
-    NDIlib_video_frame_v2_t video_frame;
-    video_frame.xres = 0;
-    video_frame.yres = 0;
-    NDIlib_frame_type_e res = NDIlib_frame_type_none;
-    do {
-        res = NDIlib_recv_capture_v2(instance, &video_frame, NULL, NULL, timeout);
-    } while (res != NDIlib_frame_type_video && res != NDIlib_frame_type_none && res != NDIlib_frame_type_error);
-
-    return video_frame;
-}
-
-NDIlib_audio_frame_v2_t gst_ndi_util_get_audio_frame(NDIlib_recv_instance_t instance, gint timeout) {
-    NDIlib_audio_frame_v2_t audio_frame;
-    audio_frame.sample_rate = 0;
-    NDIlib_frame_type_e res = NDIlib_frame_type_none;
-    do {
-        res = NDIlib_recv_capture_v2(instance, NULL, &audio_frame, NULL, timeout);
-    } while (res != NDIlib_frame_type_audio && res != NDIlib_frame_type_none && res != NDIlib_frame_type_error);
-
-    return audio_frame;
-}
-
-GstCaps* gst_util_create_video_caps(const NDIlib_video_frame_v2_t* frame) {
-    GstCaps* caps = gst_caps_new_simple("video/x-raw",
-        "format", G_TYPE_STRING, gst_ndi_util_get_format(frame->FourCC),
-        "width", G_TYPE_INT, (int)frame->xres,
-        "height", G_TYPE_INT, (int)frame->yres,
-        "framerate", GST_TYPE_FRACTION, frame->frame_rate_N, frame->frame_rate_D,
-        "interlace-mode", G_TYPE_STRING, gst_ndi_util_get_frame_format(frame->frame_format_type),
-        NULL);
-
-    return caps;
-}
-
-GstCaps* gst_util_create_audio_caps(const NDIlib_audio_frame_v2_t* frame) {
-    GstCaps* caps = gst_caps_new_simple("audio/x-raw",
-        "format", G_TYPE_STRING, "F32LE",
-        "channels", G_TYPE_INT, (int)frame->no_channels,
-        "rate", G_TYPE_INT, (int)frame->sample_rate,
-        NULL);
-
-    return caps;
-}
-
 GstCaps* gst_util_create_default_video_caps(void) {
     return gst_caps_new_any();
 }
