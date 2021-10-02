@@ -37,7 +37,8 @@ static void gst_ndi_device_finalize(GObject* object);
 static GstElement* gst_ndi_device_create_element(GstDevice* device,
     const gchar* name);
 static gpointer thread_func(gpointer data);
-static void gst_ndi_device_remove_device(Device* device);
+static void gst_ndi_device_create_devices(void);
+static void gst_ndi_device_release_devices(void);
 
 static void
 gst_ndi_device_class_init(GstNdiDeviceClass* klass)
@@ -345,9 +346,7 @@ static gpointer
 
 GstNdiInput *
 gst_ndi_device_acquire_input(const char* id, GstElement * src, gboolean is_audio) {
-    if (devices == NULL) {
-        devices = g_ptr_array_new();
-    }
+    gst_ndi_device_create_devices();
     
     GST_INFO("Acquire input. Total devices: %d", devices->len);
 
@@ -417,19 +416,6 @@ gst_ndi_device_acquire_input(const char* id, GstElement * src, gboolean is_audio
     return NULL;
 }
 
-static void 
-gst_ndi_device_stop_capture_thread(Device* device) {
-    if (device->input.capture_thread) {
-        GThread* capture_thread = g_steal_pointer(&device->input.capture_thread);
-        device->input.is_capture_terminated = TRUE;
-
-        GST_DEBUG("Stop capture thread");
-
-        g_thread_join(capture_thread);
-        device->input.capture_thread = NULL;
-    }
-}
-
 void
 gst_ndi_device_release_input(const char* id, GstElement * src, gboolean is_audio) {
     for (guint i = 0; i < devices->len; ++i) {
@@ -454,23 +440,46 @@ gst_ndi_device_release_input(const char* id, GstElement * src, gboolean is_audio
 
             if (!device->input.is_video_enabled
                 && !device->input.is_audio_enabled) {
-                gst_ndi_device_stop_capture_thread(device);
+                g_ptr_array_remove(devices, device);
+                if (devices->len == 0) {
+                    gst_ndi_device_release_devices();
+                }
             }
+
+            break;
         }
     }
 }
 
 static void
-gst_ndi_device_remove_device(Device* device) {
-    if (device == NULL) {
-        return;
-    }
+gst_ndi_device_stop_capture_thread(Device* device) {
+    if (device->input.capture_thread) {
+        GThread* capture_thread = g_steal_pointer(&device->input.capture_thread);
+        device->input.is_capture_terminated = TRUE;
 
+        GST_DEBUG("Stop capture thread");
+
+        g_thread_join(capture_thread);
+        device->input.capture_thread = NULL;
+    }
+}
+
+static void
+gst_ndi_device_free_device(gpointer data) {
+    Device* device = (Device*)data;
+
+    GST_DEBUG("Release device id = %s", device->id);
     gst_ndi_device_stop_capture_thread(device);
     g_free(device->id);
     g_free(device->p_ndi_name);
     g_free(device);
-    g_ptr_array_remove(devices, device);
+}
+
+static void
+gst_ndi_device_create_devices(void) {
+    if (devices == NULL) {
+        devices = g_ptr_array_new_with_free_func(gst_ndi_device_free_device);
+    }
 }
 
 static void
@@ -480,11 +489,6 @@ gst_ndi_device_release_devices(void) {
         return;
     }
 
-    while (devices->len > 0) {
-        Device* device = (Device*)g_ptr_array_index(devices, 0);
-        GST_DEBUG("Release device id = %s", device->id);
-        gst_ndi_device_remove_device(device);
-    }
     g_ptr_array_unref(devices);
     devices = NULL;
 }
