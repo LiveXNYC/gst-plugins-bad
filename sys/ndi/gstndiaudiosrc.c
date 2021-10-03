@@ -232,20 +232,12 @@ gst_ndi_audio_src_get_caps(GstBaseSrc* src, GstCaps* filter)
     return caps;
 }
 
-
 static GstCaps*
 gst_ndi_audio_src_get_input_caps(GstNdiAudioSrc* self) {
     GstCaps* caps = NULL;
     g_mutex_lock(&self->input_mutex);
     if (self->input != NULL) {
-        guint64 channel_mask = (1ULL << self->input->channels) - 1;
-        caps = gst_caps_new_simple("audio/x-raw",
-            "format", G_TYPE_STRING, "F32LE",
-            "channels", G_TYPE_INT, (int)self->input->channels,
-            "rate", G_TYPE_INT, (int)self->input->sample_rate,
-            "layout", G_TYPE_STRING, "interleaved",
-            "channel-mask", GST_TYPE_BITMASK, (guint64)channel_mask,
-            NULL);
+        caps = gst_ndi_input_get_audio_caps(self->input);
     }
     g_mutex_unlock(&self->input_mutex);
 
@@ -285,7 +277,7 @@ gst_ndi_audio_src_got_frame(GstElement* ndi_device, gint8* buffer, guint size, g
         gint8* frame = (gint8*)buffer;
         gint8* src = NULL;
         guint channel_counter = 0;
-        guint channels = self->input->channels;
+        guint channels = gst_ndi_input_get_channels(self->input);
         for (int i = 0; i < size / sizeof(float); ++i) {
             src = frame + frameOffset + stride * channel_counter;
             ++channel_counter;
@@ -299,14 +291,12 @@ gst_ndi_audio_src_got_frame(GstElement* ndi_device, gint8* buffer, guint size, g
         }
 
         guint n;
-        n = size / sizeof(float) / self->input->channels;
+        n = size / sizeof(float) / channels;
         GST_BUFFER_OFFSET(tmp) = self->n_samples;
         GST_BUFFER_OFFSET_END(tmp) = self->n_samples + n;
 
         GST_BUFFER_DTS(tmp) = GST_CLOCK_TIME_NONE;
-
-        GST_BUFFER_PTS(tmp) = self->timestamp_offset + gst_util_uint64_scale(self->n_samples, GST_SECOND, self->input->sample_rate);
-        GST_BUFFER_DURATION(tmp) = self->timestamp_offset + gst_util_uint64_scale(self->n_samples + n, GST_SECOND, self->input->sample_rate) - GST_BUFFER_TIMESTAMP(tmp);
+        GST_BUFFER_DURATION(tmp) = gst_ndi_input_get_audio_buffer_duration(self->input);
 
         GST_BUFFER_FLAG_UNSET(tmp, GST_BUFFER_FLAG_DISCONT);
         if (self->n_samples == 0) {
@@ -407,13 +397,10 @@ gboolean gst_ndi_audio_src_query(GstBaseSrc* bsrc, GstQuery* query) {
     switch (GST_QUERY_TYPE(query)) {
     case GST_QUERY_LATENCY: {
         g_mutex_lock(&self->input_mutex);
-        if (self->input && self->input->is_audio_enabled) {
+        if (self->input) {
             GstClockTime min, max;
-
-            min = gst_util_uint64_scale_int(self->input->audio_buffer_size,
-                GST_SECOND, self->input->sample_rate * sizeof(float) * self->input->channels);
+            min = gst_ndi_input_get_audio_buffer_duration(self->input);
             max = 5 * min;
-
             gst_query_set_latency(query, TRUE, min, max);
             ret = TRUE;
         }
@@ -445,10 +432,8 @@ static void gst_ndi_audio_src_get_times(GstBaseSrc* src, GstBuffer* buffer,
             }
             else {
                 g_mutex_lock(&self->input_mutex);
-                if (self->input->sample_rate > 0) {
-                    *end = *start +
-                        gst_util_uint64_scale_int(gst_buffer_get_size(buffer),
-                            GST_SECOND, self->input->sample_rate * sizeof(float) * self->input->channels);
+                if (self->input) {
+                    *end = *start + gst_ndi_input_get_audio_buffer_duration(self->input);
                 }
                 g_mutex_unlock(&self->input_mutex);
             }
@@ -468,7 +453,7 @@ GstFlowReturn gst_ndi_audio_src_create(GstPushSrc* pushsrc, GstBuffer** buffer) 
     GstBuffer* buf = g_async_queue_timeout_pop(self->queue, 100000);
     if (!buf) {
         GST_DEBUG_OBJECT(self, "No buffer");
-        gsize size = self->input->audio_buffer_size;
+        gsize size = gst_ndi_input_get_audio_buffer_size(self->input);
         buf = gst_buffer_new_allocate(NULL, size, NULL);
         gst_buffer_memset(buf, 0, 0, size);
     }

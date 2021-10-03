@@ -203,22 +203,10 @@ gst_ndi_video_src_get_input_caps(GstNdiVideoSrc* self) {
     GstCaps* caps = NULL;
     g_mutex_lock(&self->input_mutex);
     if (self->input != NULL) {
-        gint dest_n = 1, dest_d = 1;
-        if (self->input->picture_aspect_ratio != 0) {
-            double par = (double)(self->input->yres * self->input->picture_aspect_ratio) / self->input->xres;
-            gst_util_double_to_fraction(par, &dest_n, &dest_d);
-        }
-
-        caps = gst_caps_new_simple("video/x-raw",
-            "format", G_TYPE_STRING, gst_ndi_util_get_format(self->input->FourCC),
-            "width", G_TYPE_INT, (int)self->input->xres,
-            "height", G_TYPE_INT, (int)self->input->yres,
-            "framerate", GST_TYPE_FRACTION, self->input->frame_rate_N, self->input->frame_rate_D,
-            "pixel-aspect-ratio", GST_TYPE_FRACTION, dest_n, dest_d,
-            "interlace-mode", G_TYPE_STRING, gst_ndi_util_get_frame_format(self->input->frame_format_type),
-            NULL);
-        self->buffer_duration = gst_util_uint64_scale(GST_SECOND, self->input->frame_rate_D, self->input->frame_rate_N);
-        GST_DEBUG_OBJECT(self, "PAR %.03f", self->input->picture_aspect_ratio);
+        caps = gst_ndi_input_get_video_caps(self->input);
+        self->buffer_duration = gst_util_uint64_scale(GST_SECOND
+            , gst_ndi_input_get_frame_rate_d(self->input)
+            , gst_ndi_input_get_frame_rate_n(self->input));
     }
     g_mutex_unlock(&self->input_mutex);
 
@@ -317,7 +305,7 @@ gst_ndi_video_src_fixate(GstBaseSrc* src, GstCaps* caps) {
         gst_structure_fixate_field_nearest_int(structure, "width", G_MAXINT);
         gst_structure_fixate_field_nearest_int(structure, "height", G_MAXINT);
         gst_structure_fixate_field_nearest_fraction(structure, "framerate",
-            self->input->frame_rate_N, self->input->frame_rate_D);
+            gst_ndi_input_get_frame_rate_n(self->input), gst_ndi_input_get_frame_rate_d(self->input));
     }
 
     fixated_caps = gst_caps_fixate(fixated_caps);
@@ -493,7 +481,9 @@ gst_ndi_video_src_query(GstBaseSrc* bsrc, GstQuery* query) {
         if (self->input) {
             GstClockTime min, max;
 
-            min = gst_util_uint64_scale_ceil(GST_SECOND, self->input->frame_rate_D, self->input->frame_rate_N);
+            min = gst_util_uint64_scale_ceil(GST_SECOND
+                , gst_ndi_input_get_frame_rate_d(self->input)
+                , gst_ndi_input_get_frame_rate_n(self->input));
             max = 5 * min;
 
             gst_query_set_latency(query, TRUE, min, max);

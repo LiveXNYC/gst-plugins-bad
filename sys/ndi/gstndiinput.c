@@ -1,7 +1,37 @@
 #include "gstndiinput.h"
+#include "gstndiutil.h"
 
 GST_DEBUG_CATEGORY_EXTERN(gst_ndi_debug);
 #define GST_CAT_DEFAULT gst_ndi_debug
+
+struct _GstNdiInputPriv {
+    GMutex lock;
+    GThread* capture_thread;
+    gboolean is_capture_terminated;
+
+    gboolean is_started;
+    NDIlib_recv_instance_t pNDI_recv;
+    NDIlib_framesync_instance_t pNDI_recv_sync;
+
+    /* Set by the video source */
+    GstElement* videosrc;
+    gboolean is_video_enabled;
+    int xres;
+    int yres;
+    int frame_rate_N;
+    int frame_rate_D;
+    float picture_aspect_ratio;
+    NDIlib_frame_format_type_e frame_format_type;
+    NDIlib_FourCC_video_type_e FourCC;
+    int stride;
+
+    /* Set by the audio source */
+    GstElement* audiosrc;
+    gboolean is_audio_enabled;
+    guint channels;
+    guint sample_rate;
+    guint audio_buffer_size;
+};
 
 static GHashTable* inputs = NULL;
 
@@ -36,121 +66,132 @@ gst_ndi_input_create_receiver(const gchar* url_adress)
 
 static void
 gst_ndi_input_update_video_input(GstNdiInput* self, NDIlib_video_frame_v2_t* video_frame) {
-    gboolean is_caps_changed = self->xres != video_frame->xres;
-    is_caps_changed |= self->yres != video_frame->yres;
-    is_caps_changed |= self->frame_rate_N != video_frame->frame_rate_N;
-    is_caps_changed |= self->frame_rate_D != video_frame->frame_rate_D;
-    is_caps_changed |= self->frame_format_type != video_frame->frame_format_type;
-    is_caps_changed |= self->FourCC != video_frame->FourCC;
-    is_caps_changed |= self->picture_aspect_ratio != video_frame->picture_aspect_ratio;
+    GstNdiInputPriv* priv = self->priv;
 
-    self->xres = video_frame->xres;
-    self->yres = video_frame->yres;
-    self->frame_rate_N = video_frame->frame_rate_N;
-    self->frame_rate_D = video_frame->frame_rate_D;
-    self->frame_format_type = video_frame->frame_format_type;
-    self->FourCC = video_frame->FourCC;
-    self->stride = video_frame->line_stride_in_bytes;
-    self->picture_aspect_ratio = video_frame->picture_aspect_ratio;
+    gboolean is_caps_changed = priv->xres != video_frame->xres;
+    is_caps_changed |= priv->yres != video_frame->yres;
+    is_caps_changed |= priv->frame_rate_N != video_frame->frame_rate_N;
+    is_caps_changed |= priv->frame_rate_D != video_frame->frame_rate_D;
+    is_caps_changed |= priv->frame_format_type != video_frame->frame_format_type;
+    is_caps_changed |= priv->FourCC != video_frame->FourCC;
+    is_caps_changed |= priv->picture_aspect_ratio != video_frame->picture_aspect_ratio;
+
+    g_mutex_lock(&priv->lock);
+    priv->xres = video_frame->xres;
+    priv->yres = video_frame->yres;
+    priv->frame_rate_N = video_frame->frame_rate_N;
+    priv->frame_rate_D = video_frame->frame_rate_D;
+    priv->frame_format_type = video_frame->frame_format_type;
+    priv->FourCC = video_frame->FourCC;
+    priv->stride = video_frame->line_stride_in_bytes;
+    priv->picture_aspect_ratio = video_frame->picture_aspect_ratio;
+    g_mutex_unlock(&priv->lock);
 
     if (self->got_video_frame) {
         guint size = video_frame->line_stride_in_bytes * video_frame->yres;
-        self->got_video_frame(self->videosrc, (gint8*)video_frame->p_data, size, is_caps_changed);
+        self->got_video_frame(priv->videosrc, (gint8*)video_frame->p_data, size, is_caps_changed);
     }
 }
 
 static void
 gst_ndi_input_update_audio_input(GstNdiInput* self, NDIlib_audio_frame_v2_t* audio_frame) {
-    gboolean is_caps_changed = self->channels != audio_frame->no_channels;
-    is_caps_changed |= self->sample_rate != audio_frame->sample_rate;
+    GstNdiInputPriv* priv = self->priv;
 
-    self->channels = audio_frame->no_channels;
-    self->sample_rate = audio_frame->sample_rate;
-    self->audio_buffer_size = audio_frame->no_samples * sizeof(float) * audio_frame->no_channels;
+    gboolean is_caps_changed = priv->channels != audio_frame->no_channels;
+    is_caps_changed |= priv->sample_rate != audio_frame->sample_rate;
+
+    g_mutex_lock(&priv->lock);
+    priv->channels = audio_frame->no_channels;
+    priv->sample_rate = audio_frame->sample_rate;
+    priv->audio_buffer_size = audio_frame->no_samples * sizeof(float) * audio_frame->no_channels;
+    g_mutex_unlock(&priv->lock);
+
     int stride = audio_frame->no_channels == 1 ? 0 : audio_frame->channel_stride_in_bytes;
     if (self->got_audio_frame) {
-        self->got_audio_frame(self->audiosrc, (gint8*)audio_frame->p_data, self->audio_buffer_size
+        self->got_audio_frame(priv->audiosrc, (gint8*)audio_frame->p_data, priv->audio_buffer_size
             , stride, is_caps_changed);
     }
 }
 
 static void
 gst_ndi_input_capture(GstNdiInput* self, const gchar* id) {
-    if (self->pNDI_recv == NULL) {
-        self->pNDI_recv = gst_ndi_input_create_receiver(id);
+    GstNdiInputPriv* priv = self->priv;
+    if (priv->pNDI_recv == NULL) {
+        priv->pNDI_recv = gst_ndi_input_create_receiver(id);
 
-        if (self->pNDI_recv == NULL) {
+        if (priv->pNDI_recv == NULL) {
             return;
         }
     }
 
     NDIlib_audio_frame_v2_t audio_frame;
     NDIlib_video_frame_v2_t video_frame;
-    while (!self->is_capture_terminated) {
-        NDIlib_frame_type_e res = NDIlib_recv_capture_v2(self->pNDI_recv, &video_frame, &audio_frame, NULL, 500);
+    while (!priv->is_capture_terminated) {
+        NDIlib_frame_type_e res = NDIlib_recv_capture_v2(priv->pNDI_recv, &video_frame, &audio_frame, NULL, 500);
         if (res == NDIlib_frame_type_video) {
             gst_ndi_input_update_video_input(self, &video_frame);
-            NDIlib_recv_free_video_v2(self->pNDI_recv, &video_frame);
+            NDIlib_recv_free_video_v2(priv->pNDI_recv, &video_frame);
         }
         else if (res == NDIlib_frame_type_audio) {
             gst_ndi_input_update_audio_input(self, &audio_frame);
-            NDIlib_recv_free_audio_v2(self->pNDI_recv, &audio_frame);
+            NDIlib_recv_free_audio_v2(priv->pNDI_recv, &audio_frame);
         }
         else if (res == NDIlib_frame_type_error) {
             GST_DEBUG("NDI receive ERROR %s", id);
         }
     }
 
-    if (self->pNDI_recv != NULL) {
-        NDIlib_recv_destroy(self->pNDI_recv);
-        self->pNDI_recv = NULL;
+    if (priv->pNDI_recv != NULL) {
+        NDIlib_recv_destroy(priv->pNDI_recv);
+        priv->pNDI_recv = NULL;
     }
 }
 
 static void
 gst_ndi_input_capture_sync(GstNdiInput* self, const gchar* id) {
-    if (self->pNDI_recv_sync == NULL) {
-        self->pNDI_recv = gst_ndi_input_create_receiver(id);
-        if (self->pNDI_recv == NULL) {
+    GstNdiInputPriv* priv = self->priv;
+    if (priv->pNDI_recv_sync == NULL) {
+        priv->pNDI_recv = gst_ndi_input_create_receiver(id);
+        if (priv->pNDI_recv == NULL) {
             return;
         }
 
-        self->pNDI_recv_sync = NDIlib_framesync_create(self->pNDI_recv);
-        if (self->pNDI_recv_sync == NULL) {
-            NDIlib_recv_destroy(self->pNDI_recv);
-            self->pNDI_recv = NULL;
+        priv->pNDI_recv_sync = NDIlib_framesync_create(priv->pNDI_recv);
+        if (priv->pNDI_recv_sync == NULL) {
+            NDIlib_recv_destroy(priv->pNDI_recv);
+            priv->pNDI_recv = NULL;
             return;
         }
     }
 
-    while (!self->is_capture_terminated) {
+    while (!priv->is_capture_terminated) {
         NDIlib_audio_frame_v2_t audio_frame;
         NDIlib_video_frame_v2_t video_frame;
 
-        NDIlib_framesync_capture_video(self->pNDI_recv_sync, &video_frame, NDIlib_frame_format_type_progressive);
+        NDIlib_framesync_capture_video(priv->pNDI_recv_sync, &video_frame, NDIlib_frame_format_type_progressive);
         if (video_frame.p_data) {
             gst_ndi_input_update_video_input(self, &video_frame);
-            NDIlib_framesync_free_video(self->pNDI_recv_sync, &video_frame);
+            NDIlib_framesync_free_video(priv->pNDI_recv_sync, &video_frame);
         }
 
-        NDIlib_framesync_capture_audio(self->pNDI_recv_sync, &audio_frame, 0, 0, 0);
+        NDIlib_framesync_capture_audio(priv->pNDI_recv_sync, &audio_frame, 0, 0, 0);
 
         if (audio_frame.p_data) {
             gst_ndi_input_update_audio_input(self, &audio_frame);
-            NDIlib_framesync_free_audio(self->pNDI_recv_sync, &audio_frame);
+            NDIlib_framesync_free_audio(priv->pNDI_recv_sync, &audio_frame);
         }
 
         g_usleep(33000);
     }
 
-    if (self->pNDI_recv_sync == NULL) {
-        NDIlib_framesync_destroy(self->pNDI_recv_sync);
-        self->pNDI_recv_sync = NULL;
+    if (priv->pNDI_recv_sync == NULL) {
+        NDIlib_framesync_destroy(priv->pNDI_recv_sync);
+        priv->pNDI_recv_sync = NULL;
     }
 
-    if (self->pNDI_recv != NULL) {
-        NDIlib_recv_destroy(self->pNDI_recv);
-        self->pNDI_recv = NULL;
+    if (priv->pNDI_recv != NULL) {
+        NDIlib_recv_destroy(priv->pNDI_recv);
+        priv->pNDI_recv = NULL;
     }
 }
 
@@ -161,12 +202,12 @@ input_capture_thread_func(gpointer data) {
     GST_DEBUG("START NDI CAPTURE THREAD");
     if (g_hash_table_contains(inputs, id)) {
         GstNdiInput* self = g_hash_table_lookup(inputs, id);
-        self->is_started = TRUE;
+        self->priv->is_started = TRUE;
 
         gst_ndi_input_capture(self, id);
         //gst_ndi_device_capture_sync(self, id);
 
-        self->is_started = FALSE;
+        self->priv->is_started = FALSE;
     }
     GST_DEBUG("STOP NDI CAPTURE THREAD");
 
@@ -194,9 +235,9 @@ gst_ndi_input_acquire(const char* id, GstElement* src, gboolean is_audio) {
 
     gboolean is_error = FALSE;
     if (is_audio) {
-        if (input->audiosrc == NULL) {
-            input->audiosrc = src;
-            input->is_audio_enabled = TRUE;
+        if (input->priv->audiosrc == NULL) {
+            input->priv->audiosrc = src;
+            input->priv->is_audio_enabled = TRUE;
 
             GST_INFO("Audio input is acquired");
         }
@@ -207,9 +248,9 @@ gst_ndi_input_acquire(const char* id, GstElement* src, gboolean is_audio) {
         }
     }
     else {
-        if (input->videosrc == NULL) {
-            input->videosrc = src;
-            input->is_video_enabled = TRUE;
+        if (input->priv->videosrc == NULL) {
+            input->priv->videosrc = src;
+            input->priv->is_video_enabled = TRUE;
 
             GST_INFO("Video input is acquired");
         }
@@ -221,13 +262,13 @@ gst_ndi_input_acquire(const char* id, GstElement* src, gboolean is_audio) {
     }
 
     if (!is_error) {
-        if (input->capture_thread == NULL) {
+        if (input->priv->capture_thread == NULL) {
 
             GST_DEBUG("Start input thread");
 
-            input->is_capture_terminated = FALSE;
+            input->priv->is_capture_terminated = FALSE;
             GError* error = NULL;
-            input->capture_thread =
+            input->priv->capture_thread =
                 g_thread_try_new("GstNdiInputReader", input_capture_thread_func, (gpointer)id, &error);
         }
 
@@ -242,28 +283,29 @@ gst_ndi_input_acquire(const char* id, GstElement* src, gboolean is_audio) {
 }
 
 void
-gst_ndi_input_release(const char* id, GstElement* src, gboolean is_audio) {
+gst_ndi_input_release(const char* id, GstElement* src, gboolean is_audio) 
+{
     if (g_hash_table_contains(inputs, id)) {
         GstNdiInput* input = g_hash_table_lookup(inputs, id);
         if (is_audio) {
-            if (input->audiosrc == src) {
-                input->audiosrc = NULL;
-                input->is_audio_enabled = FALSE;
+            if (input->priv->audiosrc == src) {
+                input->priv->audiosrc = NULL;
+                input->priv->is_audio_enabled = FALSE;
 
                 GST_INFO("Audio input is free");
             }
         }
         else {
-            if (input->videosrc == src) {
-                input->videosrc = NULL;
-                input->is_video_enabled = FALSE;
+            if (input->priv->videosrc == src) {
+                input->priv->videosrc = NULL;
+                input->priv->is_video_enabled = FALSE;
 
                 GST_INFO("Video input is free");
             }
         }
 
-        if (!input->is_video_enabled
-            && !input->is_audio_enabled) {
+        if (!input->priv->is_video_enabled
+            && !input->priv->is_audio_enabled) {
             g_hash_table_remove(inputs, id);
             if (g_hash_table_size(inputs) == 0) {
                 gst_ndi_input_release_inputs();
@@ -272,16 +314,88 @@ gst_ndi_input_release(const char* id, GstElement* src, gboolean is_audio) {
     }
 }
 
+GstCaps*
+gst_ndi_input_get_video_caps(GstNdiInput* input) 
+{
+    GstCaps* caps = NULL;
+    GstNdiInputPriv* priv = input->priv;
+    gint dest_n = 1, dest_d = 1;
+
+    g_mutex_lock(&priv->lock);
+    if (priv->picture_aspect_ratio != 0) {
+        double par = (double)(priv->yres * priv->picture_aspect_ratio) / priv->xres;
+        gst_util_double_to_fraction(par, &dest_n, &dest_d);
+    }
+
+    caps = gst_caps_new_simple("video/x-raw",
+        "format", G_TYPE_STRING, gst_ndi_util_get_format(priv->FourCC),
+        "width", G_TYPE_INT, (int)priv->xres,
+        "height", G_TYPE_INT, (int)priv->yres,
+        "framerate", GST_TYPE_FRACTION, priv->frame_rate_N, priv->frame_rate_D,
+        "pixel-aspect-ratio", GST_TYPE_FRACTION, dest_n, dest_d,
+        "interlace-mode", G_TYPE_STRING, gst_ndi_util_get_frame_format(priv->frame_format_type),
+        NULL);
+    g_mutex_unlock(&priv->lock);
+
+    GST_DEBUG("PAR %.03f", priv->picture_aspect_ratio);
+
+    return caps;
+}
+
+GstCaps* 
+gst_ndi_input_get_audio_caps(GstNdiInput* input)
+{
+    GstCaps* caps = NULL;
+    GstNdiInputPriv* priv = input->priv;
+
+    g_mutex_lock(&priv->lock);
+    guint64 channel_mask = (1ULL << priv->channels) - 1;
+    caps = gst_caps_new_simple("audio/x-raw",
+        "format", G_TYPE_STRING, "F32LE",
+        "channels", G_TYPE_INT, (int)priv->channels,
+        "rate", G_TYPE_INT, (int)priv->sample_rate,
+        "layout", G_TYPE_STRING, "interleaved",
+        "channel-mask", GST_TYPE_BITMASK, (guint64)channel_mask,
+        NULL);
+    g_mutex_unlock(&priv->lock);
+
+    return caps;
+}
+
+GstClockTime gst_ndi_input_get_audio_buffer_duration(GstNdiInput* input) {
+    GstNdiInputPriv* priv = input->priv;
+    GstClockTime res = gst_util_uint64_scale_int(priv->audio_buffer_size,
+            GST_SECOND, priv->sample_rate * sizeof(float) * priv->channels);
+
+    return res;
+}
+
+int gst_ndi_input_get_channels(GstNdiInput* input) {
+    return input->priv->channels;
+}
+
+guint gst_ndi_input_get_audio_buffer_size(GstNdiInput* input) {
+    return input->priv->audio_buffer_size;
+}
+
+int gst_ndi_input_get_frame_rate_n(GstNdiInput* input) {
+    return input->priv->frame_rate_N;
+}
+
+int gst_ndi_input_get_frame_rate_d(GstNdiInput* input) {
+    return input->priv->frame_rate_D;
+}
+
 static void
 gst_ndi_input_stop_capture_thread(GstNdiInput* input) {
-    if (input->capture_thread) {
-        GThread* capture_thread = g_steal_pointer(&input->capture_thread);
-        input->is_capture_terminated = TRUE;
+    if (input->priv->capture_thread) {
+        GThread* capture_thread = g_steal_pointer(&input->priv->capture_thread);
+        input->priv->is_capture_terminated = TRUE;
 
         GST_DEBUG("Stop capture thread");
 
         g_thread_join(capture_thread);
-        input->capture_thread = NULL;
+        input->priv->capture_thread = NULL;
     }
 }
 
@@ -289,7 +403,8 @@ static GstNdiInput*
 gst_ndi_input_create_input()
 {
     GstNdiInput* input = g_new0(GstNdiInput, 1);
-    g_mutex_init(&input->lock);
+    input->priv = g_new0(GstNdiInputPriv, 1);
+    g_mutex_init(&input->priv->lock);
 
     return input;
 }
@@ -299,6 +414,8 @@ gst_ndi_input_free_input(gpointer data) {
     GstNdiInput* input = (GstNdiInput*)data;
 
     gst_ndi_input_stop_capture_thread(input);
+    g_mutex_clear(&input->priv->lock);
+    g_free(input->priv);
     g_free(input);
 }
 
