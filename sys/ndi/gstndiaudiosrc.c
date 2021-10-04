@@ -306,7 +306,6 @@ gst_ndi_audio_src_got_frame(GstElement* ndi_device, gint8* buffer, guint size, g
         self->n_samples += n;
 
         g_async_queue_push(self->queue, tmp);
-        GST_DEBUG_OBJECT(self, "create ts %" GST_TIME_FORMAT, GST_TIME_ARGS(GST_BUFFER_TIMESTAMP(tmp)));
     }
 
     g_mutex_unlock(&self->input_mutex);
@@ -373,7 +372,6 @@ gboolean gst_ndi_audio_src_set_caps(GstBaseSrc* src, GstCaps* caps) {
 GstCaps* gst_ndi_audio_src_fixate(GstBaseSrc* src, GstCaps* caps) {
     GstNdiAudioSrc* self = GST_NDI_AUDIO_SRC(src);
 
-    GstStructure* structure;
     GstCaps* fixated_caps;
     GST_DEBUG_OBJECT(self, "fixate caps %" GST_PTR_FORMAT, caps);
     fixated_caps = gst_caps_make_writable(caps);
@@ -402,6 +400,9 @@ gboolean gst_ndi_audio_src_query(GstBaseSrc* bsrc, GstQuery* query) {
             min = gst_ndi_input_get_audio_buffer_duration(self->input);
             max = 5 * min;
             gst_query_set_latency(query, TRUE, min, max);
+            
+            GST_DEBUG_OBJECT(self, "min: %"GST_TIME_FORMAT" max: %"GST_TIME_FORMAT, GST_TIME_ARGS(min), GST_TIME_ARGS(max));
+            
             ret = TRUE;
         }
         else {

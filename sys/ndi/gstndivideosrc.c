@@ -485,8 +485,10 @@ gst_ndi_video_src_query(GstBaseSrc* bsrc, GstQuery* query) {
                 , gst_ndi_input_get_frame_rate_d(self->input)
                 , gst_ndi_input_get_frame_rate_n(self->input));
             max = 5 * min;
-
             gst_query_set_latency(query, TRUE, min, max);
+
+            GST_DEBUG_OBJECT(self, "min: %"GST_TIME_FORMAT" max: %"GST_TIME_FORMAT, GST_TIME_ARGS(min), GST_TIME_ARGS(max));
+
             ret = TRUE;
         }
         else {

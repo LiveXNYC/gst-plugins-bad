@@ -35,7 +35,6 @@ struct _GstNdiInputPriv {
 
 static GHashTable* inputs = NULL;
 
-static gpointer thread_func(gpointer data);
 static void gst_ndi_input_create_inputs(void);
 static void gst_ndi_input_release_inputs(void);
 static GstNdiInput* gst_ndi_input_create_input();
