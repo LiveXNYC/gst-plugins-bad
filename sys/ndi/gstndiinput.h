@@ -23,6 +23,7 @@ void         gst_ndi_input_release(const char* id, GstElement* src, gboolean is_
 GstCaps*     gst_ndi_input_get_video_caps(GstNdiInput* input);
 int gst_ndi_input_get_frame_rate_n(GstNdiInput* input);
 int gst_ndi_input_get_frame_rate_d(GstNdiInput* input);
+GstClockTime gst_ndi_input_get_video_buffer_duration(GstNdiInput* input);
 
 GstCaps* gst_ndi_input_get_audio_caps(GstNdiInput* input);
 GstClockTime gst_ndi_input_get_audio_buffer_duration(GstNdiInput* input);

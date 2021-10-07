@@ -385,6 +385,15 @@ int gst_ndi_input_get_frame_rate_d(GstNdiInput* input) {
     return input->priv->frame_rate_D;
 }
 
+GstClockTime gst_ndi_input_get_video_buffer_duration(GstNdiInput* input) {
+    GstNdiInputPriv* priv = input->priv;
+    GstClockTime res = gst_util_uint64_scale(GST_SECOND
+        , priv->frame_rate_D
+        , priv->frame_rate_N);
+
+    return res;
+}
+
 static void
 gst_ndi_input_stop_capture_thread(GstNdiInput* input) {
     if (input->priv->capture_thread) {

@@ -204,9 +204,7 @@ gst_ndi_video_src_get_input_caps(GstNdiVideoSrc* self) {
     g_mutex_lock(&self->input_mutex);
     if (self->input != NULL) {
         caps = gst_ndi_input_get_video_caps(self->input);
-        self->buffer_duration = gst_util_uint64_scale(GST_SECOND
-            , gst_ndi_input_get_frame_rate_d(self->input)
-            , gst_ndi_input_get_frame_rate_n(self->input));
+        self->buffer_duration = gst_ndi_input_get_video_buffer_duration(self->input);
     }
     g_mutex_unlock(&self->input_mutex);
 
@@ -362,7 +360,8 @@ gst_ndi_video_src_create(GstPushSrc* pushsrc, GstBuffer** buffer)
         return GST_FLOW_EOS;
     }
 
-    GstBuffer* buf = g_async_queue_timeout_pop(self->queue, 100000);
+    guint64 us_timeout = GST_TIME_AS_USECONDS(self->buffer_duration);
+    GstBuffer* buf = g_async_queue_timeout_pop(self->queue, us_timeout);
     if (buf) {
         //GST_DEBUG_OBJECT(self, "Got a buffer. Total: %i", g_async_queue_length(self->queue));
         gst_ndi_video_src_free_last_buffer(self);
