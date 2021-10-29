@@ -7,6 +7,7 @@
 #include "gstndideviceprovider.h"
 #include "gstndivideosrc.h"
 #include "gstndiaudiosrc.h"
+#include "gstndivideosink.h"
 
 GST_DEBUG_CATEGORY(gst_ndi_debug);
 GST_DEBUG_CATEGORY(gst_ndi_source_object_debug);
@@ -25,6 +26,8 @@ plugin_init(GstPlugin* plugin)
 
     gst_element_register(plugin, "ndivideosrc", GST_RANK_NONE, GST_TYPE_NDI_VIDEO_SRC);
     gst_element_register(plugin, "ndiaudiosrc", GST_RANK_NONE, GST_TYPE_NDI_AUDIO_SRC);
+
+    gst_element_register(plugin, "ndivideosink", GST_RANK_NONE, GST_TYPE_NDI_VIDEO_SINK);
 
     gst_device_provider_register(plugin, "ndideviceprovider", rank, GST_TYPE_NDI_DEVICE_PROVIDER);
 

@@ -4,6 +4,9 @@
 #include <gst/gst.h>
 #include <ndi/Processing.NDI.Lib.h>
 
+#define GST_NDI_VIDEO_FORMATS "{ UYVY, BGRA, RGBA, I420, NV12 }"
+#define NDI_VIDEO_TEMPLATE_CAPS GST_VIDEO_CAPS_MAKE (GST_NDI_VIDEO_FORMATS)
+
 G_BEGIN_DECLS
 
 const gchar* gst_ndi_util_get_format(NDIlib_FourCC_video_type_e fourCC);

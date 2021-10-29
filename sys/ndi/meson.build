@@ -8,6 +8,7 @@ ndi_sources = [
   'gstndiutil.c',
   'gstndivideosrc.c',
   'gstndiaudiosrc.c',
+  'gstndivideosink.c',
 ]
 
 ndi_ldflags = []

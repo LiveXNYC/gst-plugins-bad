@@ -17,19 +17,12 @@ enum
     PROP_DEVICE_NAME,
 };
 
-#define GST_MF_VIDEO_FORMATS \
-  "{ UYVY, UYVA, BGRA, RGBA }"
-
-#define GST_NDI_VIDEO_CAPS_MAKE(format)                                     \
-"video/x-raw"                                                     
-#define SRC_TEMPLATE_CAPS GST_NDI_VIDEO_CAPS_MAKE (GST_MF_VIDEO_FORMATS)
-
 static int MAX_QUEUE_LENGTH = 10;
 
 static GstStaticPadTemplate src_template = GST_STATIC_PAD_TEMPLATE("src",
     GST_PAD_SRC,
     GST_PAD_ALWAYS,
-    GST_STATIC_CAPS(SRC_TEMPLATE_CAPS));
+    GST_STATIC_CAPS(NDI_VIDEO_TEMPLATE_CAPS));
 
 static void gst_ndi_video_src_finalize(GObject* object);
 static void gst_ndi_video_src_get_property(GObject* object, guint prop_id,
