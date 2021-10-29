@@ -153,51 +153,11 @@ static GstCaps* gst_ndi_video_sink_get_caps(GstBaseSink* basesink,
     return caps;
 }
 
-static NDIlib_send_instance_t pNDI_send;
-static NDIlib_video_frame_v2_t NDI_video_frame;
 static gboolean gst_ndi_video_sink_set_caps(GstBaseSink* basesink, GstCaps* caps) {
     GstNdiVideoSink* self = GST_NDI_VIDEO_SINK(basesink);
     GST_DEBUG_OBJECT(self, "caps %" GST_PTR_FORMAT, caps);
     
-    GstVideoInfo videoInfo;
-    gst_video_info_init(&videoInfo);
-    if (!gst_video_info_from_caps(&videoInfo, caps)) {
-        return FALSE;
-    }
-
-    switch (videoInfo.finfo->format) {
-    case GST_VIDEO_FORMAT_UYVY:
-        NDI_video_frame.FourCC = NDIlib_FourCC_type_UYVY;
-        break;
-    case GST_VIDEO_FORMAT_I420:
-        NDI_video_frame.FourCC = NDIlib_FourCC_video_type_I420;
-        break;
-    case GST_VIDEO_FORMAT_NV12:
-        NDI_video_frame.FourCC = NDIlib_FourCC_video_type_NV12;
-        break;
-    case GST_VIDEO_FORMAT_BGRA:
-        NDI_video_frame.FourCC = NDIlib_FourCC_video_type_BGRA;
-        break;
-    case GST_VIDEO_FORMAT_RGBA:
-        NDI_video_frame.FourCC = NDIlib_FourCC_video_type_RGBA;
-        break;
-    }
-
-    switch (videoInfo.interlace_mode) {
-    case GST_VIDEO_INTERLACE_MODE_PROGRESSIVE:
-        NDI_video_frame.frame_format_type = NDIlib_frame_format_type_progressive;
-        break;
-    case GST_VIDEO_INTERLACE_MODE_INTERLEAVED:
-        NDI_video_frame.frame_format_type = NDIlib_frame_format_type_interleaved;
-        break;
-    }
-
-    NDI_video_frame.xres = videoInfo.width;
-    NDI_video_frame.yres = videoInfo.height;
-    NDI_video_frame.frame_rate_N = videoInfo.fps_n;
-    NDI_video_frame.frame_rate_D = videoInfo.fps_d;
-    
-    NDI_video_frame.p_data = (uint8_t*)malloc(videoInfo.size);
+    gst_ndi_output_create_video_frame(self->output, caps);
 
     return TRUE;
 }
@@ -206,27 +166,16 @@ static gboolean gst_ndi_video_sink_start(GstBaseSink* basesink) {
     GstNdiVideoSink* self = GST_NDI_VIDEO_SINK(basesink);
     GST_DEBUG_OBJECT(self, "Start %s", self->device_name);
 
-    NDIlib_send_create_t NDI_send_create_desc;
-    NDI_send_create_desc.p_ndi_name = self->device_name;
-    NDI_send_create_desc.p_groups = NULL;
-    NDI_send_create_desc.clock_audio = TRUE;
-    NDI_send_create_desc.clock_video = TRUE;
+    self->output = gst_ndi_output_acquire(self->device_name, self, TRUE);
 
-    pNDI_send = NDIlib_send_create(&NDI_send_create_desc);
-    if (!pNDI_send) {
-        GST_DEBUG_OBJECT(self, "Failed");
-        return FALSE;
-    }
-
-    return TRUE;
+    return self->output != NULL;
 }
 
 static gboolean gst_ndi_video_sink_stop(GstBaseSink* basesink) {
     GstNdiVideoSink* self = GST_NDI_VIDEO_SINK(basesink);
     GST_DEBUG_OBJECT(self, "Stop");
 
-    free((void*)NDI_video_frame.p_data);
-    NDIlib_send_destroy(pNDI_send);
+    gst_ndi_output_release(self->device_name, self, TRUE);
 
     return TRUE;
 }
@@ -242,20 +191,8 @@ static GstFlowReturn gst_ndi_video_sink_prepare(GstBaseSink* basesink,
 static GstFlowReturn gst_ndi_video_sink_show_frame(GstVideoSink* vsink,
     GstBuffer* buffer) {
     GstNdiVideoSink* self = GST_NDI_VIDEO_SINK(vsink);
-    GST_DEBUG_OBJECT(self, ">");
 
-    /*GstVideoFrame videoFrame;
-    GstVideoInfo videoInfo;
-    if (!gst_video_frame_map(&videoFrame, &videoInfo, buffer, GST_MAP_READ)) {
-        return GST_FLOW_ERROR;
-    }
+    gboolean res = gst_ndi_output_send_buffer(self->output, buffer);
     
-    gst_video_frame_unmap(&videoFrame);*/
-
-    auto bufferSize = gst_buffer_get_size(buffer);
-    bufferSize = gst_buffer_extract(buffer, 0, NDI_video_frame.p_data, bufferSize);
-
-    NDIlib_send_send_video_v2(pNDI_send, &NDI_video_frame);
-    
-    return GST_FLOW_OK;
+    return res ? GST_FLOW_OK : GST_FLOW_ERROR;
 }

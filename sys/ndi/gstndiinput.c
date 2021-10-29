@@ -15,7 +15,6 @@ struct _GstNdiInputPriv {
 
     /* Set by the video source */
     GstElement* videosrc;
-    gboolean is_video_enabled;
     int xres;
     int yres;
     int frame_rate_N;
@@ -27,7 +26,6 @@ struct _GstNdiInputPriv {
 
     /* Set by the audio source */
     GstElement* audiosrc;
-    gboolean is_audio_enabled;
     guint channels;
     guint sample_rate;
     guint audio_buffer_size;
@@ -236,7 +234,6 @@ gst_ndi_input_acquire(const char* id, GstElement* src, gboolean is_audio) {
     if (is_audio) {
         if (input->priv->audiosrc == NULL) {
             input->priv->audiosrc = src;
-            input->priv->is_audio_enabled = TRUE;
 
             GST_INFO("Audio input is acquired");
         }
@@ -249,7 +246,6 @@ gst_ndi_input_acquire(const char* id, GstElement* src, gboolean is_audio) {
     else {
         if (input->priv->videosrc == NULL) {
             input->priv->videosrc = src;
-            input->priv->is_video_enabled = TRUE;
 
             GST_INFO("Video input is acquired");
         }
@@ -289,7 +285,6 @@ gst_ndi_input_release(const char* id, GstElement* src, gboolean is_audio)
         if (is_audio) {
             if (input->priv->audiosrc == src) {
                 input->priv->audiosrc = NULL;
-                input->priv->is_audio_enabled = FALSE;
 
                 GST_INFO("Audio input is free");
             }
@@ -297,14 +292,13 @@ gst_ndi_input_release(const char* id, GstElement* src, gboolean is_audio)
         else {
             if (input->priv->videosrc == src) {
                 input->priv->videosrc = NULL;
-                input->priv->is_video_enabled = FALSE;
 
                 GST_INFO("Video input is free");
             }
         }
 
-        if (!input->priv->is_video_enabled
-            && !input->priv->is_audio_enabled) {
+        if (!input->priv->videosrc
+            && !input->priv->audiosrc) {
             g_hash_table_remove(inputs, id);
             if (g_hash_table_size(inputs) == 0) {
                 gst_ndi_input_release_inputs();
