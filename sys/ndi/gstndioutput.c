@@ -135,7 +135,7 @@ gst_ndi_output_release(const char* id, GstElement* src, gboolean is_audio) {
     }
 }
 
-void
+gboolean
 gst_ndi_output_create_video_frame(GstNdiOutput* output, GstCaps* caps) {
     GstVideoInfo videoInfo;
     gst_video_info_init(&videoInfo);
@@ -181,6 +181,8 @@ gst_ndi_output_create_video_frame(GstNdiOutput* output, GstCaps* caps) {
     GST_DEBUG("videoInfo.size %llu", videoInfo.size);
     //output->priv->NDI_video_frame.p_data = (uint8_t*)malloc(output->priv->NDI_video_frame.line_stride_in_bytes * output->priv->NDI_video_frame.yres);
     output->priv->NDI_video_frame.p_data = (uint8_t*)malloc(videoInfo.size * 2);
+
+    return TRUE;
 }
 
 gboolean 

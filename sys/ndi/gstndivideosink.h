@@ -23,7 +23,6 @@ struct _GstNdiVideoSink
     GstNdiOutput* output;
     GMutex output_mutex;
 
-    gchar* device_path;
     gchar* device_name;
 };
 

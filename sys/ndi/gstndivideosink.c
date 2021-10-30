@@ -14,7 +14,6 @@ G_DEFINE_TYPE(GstNdiVideoSink, gst_ndi_video_sink, GST_TYPE_VIDEO_SINK);
 enum
 {
     PROP_0,
-    PROP_DEVICE_PATH,
     PROP_DEVICE_NAME,
 };
 
@@ -61,11 +60,6 @@ gst_ndi_video_sink_class_init(GstNdiVideoSinkClass* klass)
     video_sink_class->show_frame =
         GST_DEBUG_FUNCPTR(gst_ndi_video_sink_show_frame);
 
-    g_object_class_install_property(gobject_class, PROP_DEVICE_PATH,
-        g_param_spec_string("device-path", "Device Path",
-            "The device path", "",
-            G_PARAM_READWRITE | GST_PARAM_MUTABLE_READY |
-            G_PARAM_STATIC_STRINGS));
     g_object_class_install_property(gobject_class, PROP_DEVICE_NAME,
         g_param_spec_string("device-name", "Device Name",
             "The human-readable device name", "",
@@ -87,7 +81,6 @@ gst_ndi_video_sink_class_init(GstNdiVideoSinkClass* klass)
 static void
 gst_ndi_video_sink_init(GstNdiVideoSink* self)
 {
-    self->device_path = NULL;
     self->device_name = NULL;
 }
 
@@ -101,10 +94,6 @@ gst_ndi_video_sink_finalize(GObject* object)
         g_free(self->device_name);
         self->device_name = NULL;
     }
-    if (self->device_path) {
-        g_free(self->device_path);
-        self->device_path = NULL;
-    }
 
     G_OBJECT_CLASS(parent_class)->finalize(object);
 }
@@ -116,9 +105,6 @@ gst_ndi_video_sink_get_property(GObject* object, guint prop_id, GValue* value,
     GstNdiVideoSink* self = GST_NDI_VIDEO_SINK(object);
 
     switch (prop_id) {
-    case PROP_DEVICE_PATH:
-        g_value_set_string(value, self->device_path);
-        break;
     case PROP_DEVICE_NAME:
         g_value_set_string(value, self->device_name);
         break;
@@ -135,11 +121,6 @@ gst_ndi_video_sink_set_property(GObject* object, guint prop_id,
     GstNdiVideoSink* self = GST_NDI_VIDEO_SINK(object);
 
     switch (prop_id) {
-    case PROP_DEVICE_PATH:
-        g_free(self->device_path);
-        self->device_path = g_value_dup_string(value);
-        GST_DEBUG_OBJECT(self, "%s", self->device_path);
-        break;
     case PROP_DEVICE_NAME:
         g_free(self->device_name);
         self->device_name = g_value_dup_string(value);
@@ -168,16 +149,14 @@ static gboolean gst_ndi_video_sink_set_caps(GstBaseSink* basesink, GstCaps* caps
     GstNdiVideoSink* self = GST_NDI_VIDEO_SINK(basesink);
     GST_DEBUG_OBJECT(self, "caps %" GST_PTR_FORMAT, caps);
     
-    gst_ndi_output_create_video_frame(self->output, caps);
-
-    return TRUE;
+    return gst_ndi_output_create_video_frame(self->output, caps);
 }
 
 static gboolean gst_ndi_video_sink_start(GstBaseSink* basesink) {
     GstNdiVideoSink* self = GST_NDI_VIDEO_SINK(basesink);
     GST_DEBUG_OBJECT(self, "Start %s", self->device_name);
 
-    self->output = gst_ndi_output_acquire(self->device_name, self, TRUE);
+    self->output = gst_ndi_output_acquire(self->device_name, GST_ELEMENT(self), TRUE);
 
     return self->output != NULL;
 }
@@ -186,7 +165,7 @@ static gboolean gst_ndi_video_sink_stop(GstBaseSink* basesink) {
     GstNdiVideoSink* self = GST_NDI_VIDEO_SINK(basesink);
     GST_DEBUG_OBJECT(self, "Stop");
 
-    gst_ndi_output_release(self->device_name, self, TRUE);
+    gst_ndi_output_release(self->device_name, GST_ELEMENT(self), TRUE);
 
     return TRUE;
 }
