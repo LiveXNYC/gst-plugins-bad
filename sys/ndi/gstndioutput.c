@@ -4,6 +4,8 @@
 GST_DEBUG_CATEGORY_EXTERN(gst_ndi_debug);
 #define GST_CAT_DEFAULT gst_ndi_debug
 
+#define DEFAULT_HASH_KEY ("_")
+
 static GHashTable* outputs = NULL;
 
 struct _GstNdiOutputPriv {
@@ -40,14 +42,20 @@ static GstNdiOutput*
 gst_ndi_output_create_output(const char* id)
 {
     GstNdiOutput* output = NULL;
+    NDIlib_send_instance_t pNDI_send;
 
-    NDIlib_send_create_t NDI_send_create_desc;
-    NDI_send_create_desc.p_ndi_name = id;
-    NDI_send_create_desc.p_groups = NULL;
-    NDI_send_create_desc.clock_audio = TRUE;
-    NDI_send_create_desc.clock_video = TRUE;
+    if (strcmp(id, DEFAULT_HASH_KEY) == 0) {
+        pNDI_send = NDIlib_send_create(NULL);
+    }
+    else {
+        NDIlib_send_create_t NDI_send_create_desc;
+        NDI_send_create_desc.p_ndi_name = id;
+        NDI_send_create_desc.p_groups = NULL;
+        NDI_send_create_desc.clock_audio = TRUE;
+        NDI_send_create_desc.clock_video = TRUE;
+        pNDI_send = NDIlib_send_create(&NDI_send_create_desc);
+    }
 
-    NDIlib_send_instance_t pNDI_send = NDIlib_send_create(&NDI_send_create_desc);
     if (pNDI_send) {
         output = g_new0(GstNdiOutput, 1);
         output->priv = g_new0(GstNdiOutputPriv, 1);
@@ -66,17 +74,19 @@ gst_ndi_output_acquire(const char* id, GstElement* sink, gboolean is_audio) {
 
     GstNdiOutput* output = NULL;
 
-    if (g_hash_table_contains(outputs, id)) {
-        output = g_hash_table_lookup(outputs, id);
+    gchar* key = (id == NULL) ? DEFAULT_HASH_KEY : id;
+
+    if (g_hash_table_contains(outputs, key)) {
+        output = g_hash_table_lookup(outputs, key);
     }
     else {
         GST_INFO("Device output not found");
-        output = gst_ndi_output_create_output(id);
+        output = gst_ndi_output_create_output(key);
         if (output) {
-            gchar* key = g_strdup(id);
-            g_hash_table_insert(outputs, key, output);
+            gchar* key1 = g_strdup(key);
+            g_hash_table_insert(outputs, key1, output);
             current_instance = output;
-            GST_INFO("Add output id = %s", id);
+            GST_INFO("Add output id = %s", key1);
         }
     }
 
@@ -96,8 +106,10 @@ gst_ndi_output_release_outputs(void) {
 
 void 
 gst_ndi_output_release(const char* id, GstElement* src, gboolean is_audio) {
-    if (g_hash_table_contains(outputs, id)) {
-        GstNdiOutput* output = g_hash_table_lookup(outputs, id);
+    gchar* key = (id == NULL) ? DEFAULT_HASH_KEY : id;
+
+    if (g_hash_table_contains(outputs, key)) {
+        GstNdiOutput* output = g_hash_table_lookup(outputs, key);
         if (is_audio) {
             if (output->priv->audiosink == src) {
                 output->priv->audiosink = NULL;
@@ -115,7 +127,7 @@ gst_ndi_output_release(const char* id, GstElement* src, gboolean is_audio) {
 
         if (!output->priv->videosink
             && !output->priv->audiosink) {
-            g_hash_table_remove(outputs, id);
+            g_hash_table_remove(outputs, key);
             if (g_hash_table_size(outputs) == 0) {
                 gst_ndi_output_release_outputs();
             }
@@ -131,6 +143,7 @@ gst_ndi_output_create_video_frame(GstNdiOutput* output, GstCaps* caps) {
         return FALSE;
     }
 
+    output->priv->NDI_video_frame.line_stride_in_bytes = videoInfo.width;
     switch (videoInfo.finfo->format) {
     case GST_VIDEO_FORMAT_UYVY:
         output->priv->NDI_video_frame.FourCC = NDIlib_FourCC_type_UYVY;
@@ -143,9 +156,11 @@ gst_ndi_output_create_video_frame(GstNdiOutput* output, GstCaps* caps) {
         break;
     case GST_VIDEO_FORMAT_BGRA:
         output->priv->NDI_video_frame.FourCC = NDIlib_FourCC_video_type_BGRA;
+        output->priv->NDI_video_frame.line_stride_in_bytes *= 4;
         break;
     case GST_VIDEO_FORMAT_RGBA:
         output->priv->NDI_video_frame.FourCC = NDIlib_FourCC_video_type_RGBA;
+        output->priv->NDI_video_frame.line_stride_in_bytes *= 4;
         break;
     }
 
@@ -163,7 +178,9 @@ gst_ndi_output_create_video_frame(GstNdiOutput* output, GstCaps* caps) {
     output->priv->NDI_video_frame.frame_rate_N = videoInfo.fps_n;
     output->priv->NDI_video_frame.frame_rate_D = videoInfo.fps_d;
 
-    output->priv->NDI_video_frame.p_data = (uint8_t*)malloc(videoInfo.size);
+    GST_DEBUG("videoInfo.size %llu", videoInfo.size);
+    //output->priv->NDI_video_frame.p_data = (uint8_t*)malloc(output->priv->NDI_video_frame.line_stride_in_bytes * output->priv->NDI_video_frame.yres);
+    output->priv->NDI_video_frame.p_data = (uint8_t*)malloc(videoInfo.size * 2);
 }
 
 gboolean 

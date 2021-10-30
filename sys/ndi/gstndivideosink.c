@@ -87,14 +87,25 @@ gst_ndi_video_sink_class_init(GstNdiVideoSinkClass* klass)
 static void
 gst_ndi_video_sink_init(GstNdiVideoSink* self)
 {
+    self->device_path = NULL;
+    self->device_name = NULL;
 }
 
 static void
 gst_ndi_video_sink_finalize(GObject* object)
 {
     GstNdiVideoSink* self = GST_NDI_VIDEO_SINK(object);
-
     GST_DEBUG_OBJECT(self, "Finalize");
+
+    if (self->device_name) {
+        g_free(self->device_name);
+        self->device_name = NULL;
+    }
+    if (self->device_path) {
+        g_free(self->device_path);
+        self->device_path = NULL;
+    }
+
     G_OBJECT_CLASS(parent_class)->finalize(object);
 }
 
