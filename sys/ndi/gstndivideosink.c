@@ -132,8 +132,9 @@ gst_ndi_video_sink_set_property(GObject* object, guint prop_id,
     }
 }
 
-static GstCaps* gst_ndi_video_sink_get_caps(GstBaseSink* basesink,
-    GstCaps* filter) {
+static GstCaps* 
+gst_ndi_video_sink_get_caps(GstBaseSink* basesink, GstCaps* filter)
+{
     GstNdiVideoSink* self = GST_NDI_VIDEO_SINK(basesink);
 
     GstCaps* caps = NULL;
@@ -145,14 +146,18 @@ static GstCaps* gst_ndi_video_sink_get_caps(GstBaseSink* basesink,
     return caps;
 }
 
-static gboolean gst_ndi_video_sink_set_caps(GstBaseSink* basesink, GstCaps* caps) {
+static gboolean 
+gst_ndi_video_sink_set_caps(GstBaseSink* basesink, GstCaps* caps)
+{
     GstNdiVideoSink* self = GST_NDI_VIDEO_SINK(basesink);
     GST_DEBUG_OBJECT(self, "caps %" GST_PTR_FORMAT, caps);
     
     return gst_ndi_output_create_video_frame(self->output, caps);
 }
 
-static gboolean gst_ndi_video_sink_start(GstBaseSink* basesink) {
+static gboolean 
+gst_ndi_video_sink_start(GstBaseSink* basesink)
+{
     GstNdiVideoSink* self = GST_NDI_VIDEO_SINK(basesink);
     GST_DEBUG_OBJECT(self, "Start %s", self->device_name);
 
@@ -161,7 +166,9 @@ static gboolean gst_ndi_video_sink_start(GstBaseSink* basesink) {
     return self->output != NULL;
 }
 
-static gboolean gst_ndi_video_sink_stop(GstBaseSink* basesink) {
+static gboolean 
+gst_ndi_video_sink_stop(GstBaseSink* basesink)
+{
     GstNdiVideoSink* self = GST_NDI_VIDEO_SINK(basesink);
     GST_DEBUG_OBJECT(self, "Stop");
 
@@ -170,19 +177,21 @@ static gboolean gst_ndi_video_sink_stop(GstBaseSink* basesink) {
     return TRUE;
 }
 
-static GstFlowReturn gst_ndi_video_sink_prepare(GstBaseSink* basesink,
-    GstBuffer* buf) {
+static GstFlowReturn 
+gst_ndi_video_sink_prepare(GstBaseSink* basesink, GstBuffer* buf)
+{
     GstNdiVideoSink* self = GST_NDI_VIDEO_SINK(basesink);
     GST_DEBUG_OBJECT(self, "Prepare");
 
     return GST_FLOW_OK;
 }
 
-static GstFlowReturn gst_ndi_video_sink_show_frame(GstVideoSink* vsink,
-    GstBuffer* buffer) {
+static GstFlowReturn 
+gst_ndi_video_sink_show_frame(GstVideoSink* vsink, GstBuffer* buffer)
+{
     GstNdiVideoSink* self = GST_NDI_VIDEO_SINK(vsink);
 
-    gboolean res = gst_ndi_output_send_buffer(self->output, buffer);
+    gboolean res = gst_ndi_output_send_video_buffer(self->output, buffer);
     
     return res ? GST_FLOW_OK : GST_FLOW_ERROR;
 }

@@ -1,5 +1,6 @@
 #include "gstndioutput.h"
-#include <gst/video/video.h>
+#include <gst/video/video-info.h>
+#include <gst/audio/audio-info.h>
 
 GST_DEBUG_CATEGORY_EXTERN(gst_ndi_debug);
 #define GST_CAT_DEFAULT gst_ndi_debug
@@ -16,16 +17,18 @@ struct _GstNdiOutputPriv {
     NDIlib_video_frame_v2_t NDI_video_frame;
     
     GstElement* audiosink;
+    NDIlib_audio_frame_v2_t NDI_audio_frame;
 };
 
 static GstNdiOutput* current_instance = NULL;
 
 static void
-gst_ndi_input_free_output(gpointer data) {
+gst_ndi_input_free_output(gpointer data)
+{
     GstNdiOutput* output = (GstNdiOutput*)data;
 
     NDIlib_send_destroy(output->priv->pNDI_send);
-    free((void*)output->priv->NDI_video_frame.p_data);
+    //free((void*)output->priv->NDI_video_frame.p_data);
     g_mutex_clear(&output->priv->lock);
     g_free(output->priv);
     g_free(output);
@@ -67,7 +70,8 @@ gst_ndi_output_create_output(const char* id)
 }
 
 GstNdiOutput* 
-gst_ndi_output_acquire(const char* id, GstElement* sink, gboolean is_audio) {
+gst_ndi_output_acquire(const char* id, GstElement* sink, gboolean is_audio)
+{
     gst_ndi_input_create_outputs();
 
     GST_INFO("Acquire output. Total outputs: %d", g_hash_table_size(outputs));
@@ -94,7 +98,8 @@ gst_ndi_output_acquire(const char* id, GstElement* sink, gboolean is_audio) {
 }
 
 static void
-gst_ndi_output_release_outputs(void) {
+gst_ndi_output_release_outputs(void)
+{
     GST_DEBUG("Release outputs");
     if (!outputs) {
         return;
@@ -105,7 +110,8 @@ gst_ndi_output_release_outputs(void) {
 }
 
 void 
-gst_ndi_output_release(const char* id, GstElement* src, gboolean is_audio) {
+gst_ndi_output_release(const char* id, GstElement* src, gboolean is_audio)
+{
     gchar* key = (id == NULL) ? DEFAULT_HASH_KEY : id;
 
     if (g_hash_table_contains(outputs, key)) {
@@ -136,7 +142,8 @@ gst_ndi_output_release(const char* id, GstElement* src, gboolean is_audio) {
 }
 
 gboolean
-gst_ndi_output_create_video_frame(GstNdiOutput* output, GstCaps* caps) {
+gst_ndi_output_create_video_frame(GstNdiOutput* output, GstCaps* caps) 
+{
     GstVideoInfo videoInfo;
     gst_video_info_init(&videoInfo);
     if (!gst_video_info_from_caps(&videoInfo, caps)) {
@@ -180,13 +187,13 @@ gst_ndi_output_create_video_frame(GstNdiOutput* output, GstCaps* caps) {
 
     GST_DEBUG("videoInfo.size %llu", videoInfo.size);
     //output->priv->NDI_video_frame.p_data = (uint8_t*)malloc(output->priv->NDI_video_frame.line_stride_in_bytes * output->priv->NDI_video_frame.yres);
-    output->priv->NDI_video_frame.p_data = (uint8_t*)malloc(videoInfo.size * 2);
+    //output->priv->NDI_video_frame.p_data = (uint8_t*)malloc(videoInfo.size * 2);
 
     return TRUE;
 }
 
 gboolean 
-gst_ndi_output_send_buffer(GstNdiOutput* output, GstBuffer* buffer) {
+gst_ndi_output_send_video_buffer(GstNdiOutput* output, GstBuffer* buffer) {
     /*GstVideoFrame videoFrame;
     GstVideoInfo videoInfo;
     if (!gst_video_frame_map(&videoFrame, &videoInfo, buffer, GST_MAP_READ)) {
@@ -195,8 +202,54 @@ gst_ndi_output_send_buffer(GstNdiOutput* output, GstBuffer* buffer) {
 
     gst_video_frame_unmap(&videoFrame);*/
 
-    auto bufferSize = gst_buffer_get_size(buffer);
+    /*auto bufferSize = gst_buffer_get_size(buffer);
     bufferSize = gst_buffer_extract(buffer, 0, output->priv->NDI_video_frame.p_data, bufferSize);
+    */
+    GstMapInfo info;
+    if (gst_buffer_map(buffer, &info, GST_MAP_READ)) {
+        output->priv->NDI_video_frame.p_data = info.data;
+        NDIlib_send_send_video_v2(output->priv->pNDI_send, &output->priv->NDI_video_frame);
+        gst_buffer_unmap(buffer, &info);
+        return TRUE;
+    }
 
-    NDIlib_send_send_video_v2(output->priv->pNDI_send, &output->priv->NDI_video_frame);
+    return FALSE;
+}
+
+gboolean
+gst_ndi_output_create_audio_frame(GstNdiOutput* output, GstCaps* caps)
+{
+    GstAudioInfo audioInfo;
+    gst_audio_info_init(&audioInfo);
+    if (!gst_audio_info_from_caps(&audioInfo, caps)) {
+        return FALSE;
+    }
+
+    if (audioInfo.finfo->format != GST_AUDIO_FORMAT_F32LE
+        || audioInfo.layout != GST_AUDIO_LAYOUT_INTERLEAVED) {
+        return FALSE;
+    }
+
+    output->priv->NDI_audio_frame.sample_rate = audioInfo.rate;
+    output->priv->NDI_audio_frame.no_channels = audioInfo.channels;
+    //NDI_audio_frame.p_data = (float*)malloc(sizeof(float) * 1602 * audioInfo.channels);
+
+    return TRUE;
+}
+
+gboolean
+gst_ndi_output_send_audio_buffer(GstNdiOutput* output, GstBuffer* buffer)
+{
+    GstMapInfo info;
+    if (gst_buffer_map(buffer, &info, GST_MAP_READ)) {
+        output->priv->NDI_audio_frame.no_samples = info.size / sizeof(float) / output->priv->NDI_audio_frame.no_channels;
+        output->priv->NDI_audio_frame.channel_stride_in_bytes = info.size / output->priv->NDI_audio_frame.no_channels;
+
+        output->priv->NDI_audio_frame.p_data = (float*)info.data;
+        NDIlib_send_send_audio_v2(output->priv->pNDI_send, &output->priv->NDI_audio_frame);
+        gst_buffer_unmap(buffer, &info);
+        return TRUE;
+    }
+
+    return FALSE;
 }

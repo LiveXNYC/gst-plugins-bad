@@ -2,10 +2,14 @@
 #define __GST_NDI_UTIL_H__
 
 #include <gst/gst.h>
+#include <gst/video/video.h>
+#include <gst/audio/audio.h>
 #include <ndi/Processing.NDI.Lib.h>
 
 #define GST_NDI_VIDEO_FORMATS "{ UYVY, BGRA, RGBA, I420, NV12 }"
 #define NDI_VIDEO_TEMPLATE_CAPS GST_VIDEO_CAPS_MAKE (GST_NDI_VIDEO_FORMATS)
+
+#define NDI_AUDIO_TEMPLATE_CAPS ("audio/x-raw, format=F32LE, channels=[1, 16], rate={44100, 48000, 96000}, layout=interleaved")
 
 G_BEGIN_DECLS
 

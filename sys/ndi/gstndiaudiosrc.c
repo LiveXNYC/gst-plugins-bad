@@ -18,9 +18,7 @@ enum
 static GstStaticPadTemplate src_template = GST_STATIC_PAD_TEMPLATE("src",
     GST_PAD_SRC,
     GST_PAD_ALWAYS,
-    GST_STATIC_CAPS
-    ("audio/x-raw, format=F32LE, channels=[1, 16], rate={44100, 48000, 96000}, "
-        "layout=interleaved")
+    GST_STATIC_CAPS(NDI_AUDIO_TEMPLATE_CAPS)
 );
 
 static int MAX_QUEUE_LENGTH = 100;
