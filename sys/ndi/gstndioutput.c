@@ -30,7 +30,7 @@ gst_ndi_input_free_output(gpointer data)
 
     NDIlib_send_destroy(output->priv->pNDI_send);
     if (output->priv->NDI_audio_frame.p_data) {
-        free((void*)output->priv->NDI_video_frame.p_data);
+        free((void*)output->priv->NDI_audio_frame.p_data);
     }
     g_mutex_clear(&output->priv->lock);
     g_free(output->priv);
@@ -247,10 +247,6 @@ gst_ndi_output_send_audio_buffer(GstNdiOutput* output, GstBuffer* buffer)
 {
     GstMapInfo info;
     if (gst_buffer_map(buffer, &info, GST_MAP_READ)) {
-        int channels = output->priv->NDI_audio_frame.no_channels;
-        output->priv->NDI_audio_frame.no_samples = info.size / sizeof(float) / channels;
-        output->priv->NDI_audio_frame.channel_stride_in_bytes = info.size / channels;
-
         if (output->priv->audio_frame_size != info.size) {
             output->priv->audio_frame_size = info.size;
 
@@ -260,7 +256,7 @@ gst_ndi_output_send_audio_buffer(GstNdiOutput* output, GstBuffer* buffer)
             output->priv->NDI_audio_frame.p_data = (float*)malloc(info.size);
         }
 
-
+        int channels = output->priv->NDI_audio_frame.no_channels;
         int dest_offset = 0;
         guint channel_counter = 0;
         float* source = (float*)info.data;
@@ -279,7 +275,10 @@ gst_ndi_output_send_audio_buffer(GstNdiOutput* output, GstBuffer* buffer)
             ++source;
         }
 
+        output->priv->NDI_audio_frame.no_samples = source_size / channels;
+        output->priv->NDI_audio_frame.channel_stride_in_bytes = info.size / channels;
         NDIlib_send_send_audio_v2(output->priv->pNDI_send, &output->priv->NDI_audio_frame);
+
         gst_buffer_unmap(buffer, &info);
         return TRUE;
     }

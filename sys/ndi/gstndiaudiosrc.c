@@ -71,6 +71,7 @@ gst_ndi_audio_src_class_init(GstNdiAudioSrcClass* klass)
     basesrc_class->unlock_stop = GST_DEBUG_FUNCPTR(gst_ndi_audio_src_unlock_stop);
     basesrc_class->query = GST_DEBUG_FUNCPTR(gst_ndi_audio_src_query);
     basesrc_class->get_times = GST_DEBUG_FUNCPTR(gst_ndi_audio_src_get_times);
+
     element_class->change_state = GST_DEBUG_FUNCPTR(gst_ndi_audio_src_change_state);
 
     pushsrc_class->create = GST_DEBUG_FUNCPTR(gst_ndi_audio_src_create);
