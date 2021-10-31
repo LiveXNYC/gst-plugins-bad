@@ -117,7 +117,7 @@ gst_ndi_output_release(const char* id, GstElement* src, gboolean is_audio)
 {
     gchar* key = (id == NULL) ? DEFAULT_HASH_KEY : id;
 
-    if (g_hash_table_contains(outputs, key)) {
+    if (outputs && g_hash_table_contains(outputs, key)) {
         GstNdiOutput* output = g_hash_table_lookup(outputs, key);
         if (is_audio) {
             if (output->priv->audiosink == src) {
