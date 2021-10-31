@@ -269,23 +269,29 @@ gst_ndi_audio_src_got_frame(GstElement* ndi_device, gint8* buffer, guint size, g
     g_mutex_lock(&self->input_mutex);
 
     if (self->input) {
-        GstBuffer* tmp = gst_buffer_new_allocate(NULL, size, NULL);
-        gsize bufferOffset = 0;
-        int frameOffset = 0;
-        gint8* frame = (gint8*)buffer;
-        gint8* src = NULL;
-        guint channel_counter = 0;
         guint channels = gst_ndi_input_get_channels(self->input);
-        for (int i = 0; i < size / sizeof(float); ++i) {
-            src = frame + frameOffset + stride * channel_counter;
-            ++channel_counter;
-            if (channel_counter == channels) {
-                frameOffset += sizeof(float);
-                channel_counter = 0;
+        GstBuffer* tmp = gst_buffer_new_allocate(NULL, size, NULL);
+        GstMapInfo info;
+        if (gst_buffer_map(tmp, &info, GST_MAP_WRITE)) {
+            int source_offset = 0;
+            guint channel_counter = 0;
+            float* source = (float*)buffer;
+            guint source_size = size / sizeof(float);
+            guint source_stride = stride / sizeof(float);
+            float* dest = (float*)info.data;
+            for (int i = 0; i < source_size; ++i) {
+                float* src = source + source_offset + source_stride * channel_counter;
+                ++channel_counter;
+                if (channel_counter == channels) {
+                    ++source_offset;
+                    channel_counter = 0;
+                }
+
+                *dest = *src;
+                ++dest;
             }
 
-            gst_buffer_fill(tmp, bufferOffset, src, sizeof(float));
-            bufferOffset += sizeof(float);
+            gst_buffer_unmap(tmp, &info);
         }
 
         guint n;
