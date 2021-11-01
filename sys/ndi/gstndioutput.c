@@ -151,6 +151,7 @@ gst_ndi_output_create_video_frame(GstNdiOutput* output, GstCaps* caps)
     switch (videoInfo.finfo->format) {
     case GST_VIDEO_FORMAT_UYVY:
         output->priv->NDI_video_frame.FourCC = NDIlib_FourCC_type_UYVY;
+        output->priv->NDI_video_frame.line_stride_in_bytes *= 2;
         break;
     case GST_VIDEO_FORMAT_I420:
         output->priv->NDI_video_frame.FourCC = NDIlib_FourCC_video_type_I420;
