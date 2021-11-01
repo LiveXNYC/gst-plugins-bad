@@ -48,19 +48,13 @@ static GstNdiOutput*
 gst_ndi_output_create_output(const char* id)
 {
     GstNdiOutput* output = NULL;
-    NDIlib_send_instance_t pNDI_send;
 
-    if (strcmp(id, DEFAULT_HASH_KEY) == 0) {
-        pNDI_send = NDIlib_send_create(NULL);
-    }
-    else {
-        NDIlib_send_create_t NDI_send_create_desc;
-        NDI_send_create_desc.p_ndi_name = id;
-        NDI_send_create_desc.p_groups = NULL;
-        NDI_send_create_desc.clock_audio = TRUE;
-        NDI_send_create_desc.clock_video = TRUE;
-        pNDI_send = NDIlib_send_create(&NDI_send_create_desc);
-    }
+    NDIlib_send_create_t NDI_send_create_desc;
+    NDI_send_create_desc.p_ndi_name = id;
+    NDI_send_create_desc.p_groups = NULL;
+    NDI_send_create_desc.clock_audio = FALSE;
+    NDI_send_create_desc.clock_video = FALSE;
+    NDIlib_send_instance_t pNDI_send = NDIlib_send_create(&NDI_send_create_desc);
 
     if (pNDI_send) {
         output = g_new0(GstNdiOutput, 1);
@@ -88,12 +82,12 @@ gst_ndi_output_acquire(const char* id, GstElement* sink, gboolean is_audio)
     }
     else {
         GST_INFO("Device output not found");
-        output = gst_ndi_output_create_output(key);
+        output = gst_ndi_output_create_output(id);
         if (output) {
             gchar* key1 = g_strdup(key);
             g_hash_table_insert(outputs, key1, output);
             current_instance = output;
-            GST_INFO("Add output id = %s", key1);
+            GST_INFO("Add output id = %s", id);
         }
     }
 
