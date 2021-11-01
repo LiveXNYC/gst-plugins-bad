@@ -75,7 +75,7 @@ gst_ndi_output_acquire(const char* id, GstElement* sink, gboolean is_audio)
 
     GstNdiOutput* output = NULL;
 
-    gchar* key = (id == NULL) ? DEFAULT_HASH_KEY : id;
+    const gchar* key = (id == NULL) ? DEFAULT_HASH_KEY : id;
 
     if (g_hash_table_contains(outputs, key)) {
         output = g_hash_table_lookup(outputs, key);
@@ -109,7 +109,7 @@ gst_ndi_output_release_outputs(void)
 void 
 gst_ndi_output_release(const char* id, GstElement* src, gboolean is_audio)
 {
-    gchar* key = (id == NULL) ? DEFAULT_HASH_KEY : id;
+    const gchar* key = (id == NULL) ? DEFAULT_HASH_KEY : id;
 
     if (outputs && g_hash_table_contains(outputs, key)) {
         GstNdiOutput* output = g_hash_table_lookup(outputs, key);
@@ -166,6 +166,8 @@ gst_ndi_output_create_video_frame(GstNdiOutput* output, GstCaps* caps)
         output->priv->NDI_video_frame.FourCC = NDIlib_FourCC_video_type_RGBA;
         output->priv->NDI_video_frame.line_stride_in_bytes *= 4;
         break;
+    default:
+        return FALSE;
     }
 
     switch (videoInfo.interlace_mode) {
@@ -175,6 +177,8 @@ gst_ndi_output_create_video_frame(GstNdiOutput* output, GstCaps* caps)
     case GST_VIDEO_INTERLACE_MODE_INTERLEAVED:
         output->priv->NDI_video_frame.frame_format_type = NDIlib_frame_format_type_interleaved;
         break;
+    default:
+        return FALSE;
     }
 
     output->priv->NDI_video_frame.xres = videoInfo.width;
@@ -182,7 +186,7 @@ gst_ndi_output_create_video_frame(GstNdiOutput* output, GstCaps* caps)
     output->priv->NDI_video_frame.frame_rate_N = videoInfo.fps_n;
     output->priv->NDI_video_frame.frame_rate_D = videoInfo.fps_d;
 
-    GST_DEBUG("videoInfo.size %llu", videoInfo.size);
+    GST_DEBUG("videoInfo.size %lu", videoInfo.size);
     //output->priv->NDI_video_frame.p_data = (uint8_t*)malloc(output->priv->NDI_video_frame.line_stride_in_bytes * output->priv->NDI_video_frame.yres);
     //output->priv->NDI_video_frame.p_data = (uint8_t*)malloc(videoInfo.size * 2);
 

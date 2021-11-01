@@ -33,8 +33,6 @@ static GstCaps* gst_ndi_video_sink_get_caps(GstBaseSink* basesink,
 static gboolean gst_ndi_video_sink_set_caps(GstBaseSink* basesink, GstCaps* caps);
 static gboolean gst_ndi_video_sink_start(GstBaseSink* basesink);
 static gboolean gst_ndi_video_sink_stop(GstBaseSink* basesink);
-static GstFlowReturn gst_ndi_video_sink_prepare(GstBaseSink* basesink,
-    GstBuffer* buf);
 static GstFlowReturn gst_ndi_video_sink_show_frame(GstVideoSink* vsink,
     GstBuffer* buffer);
 
@@ -55,7 +53,6 @@ gst_ndi_video_sink_class_init(GstNdiVideoSinkClass* klass)
     gstbasesink_class->set_caps = GST_DEBUG_FUNCPTR(gst_ndi_video_sink_set_caps);
     gstbasesink_class->start = GST_DEBUG_FUNCPTR(gst_ndi_video_sink_start);
     gstbasesink_class->stop = GST_DEBUG_FUNCPTR(gst_ndi_video_sink_stop);
-    //gstbasesink_class->prepare = GST_DEBUG_FUNCPTR(gst_ndi_video_sink_prepare);
 
     video_sink_class->show_frame =
         GST_DEBUG_FUNCPTR(gst_ndi_video_sink_show_frame);
@@ -175,15 +172,6 @@ gst_ndi_video_sink_stop(GstBaseSink* basesink)
     gst_ndi_output_release(self->device_name, GST_ELEMENT(self), TRUE);
 
     return TRUE;
-}
-
-static GstFlowReturn 
-gst_ndi_video_sink_prepare(GstBaseSink* basesink, GstBuffer* buf)
-{
-    GstNdiVideoSink* self = GST_NDI_VIDEO_SINK(basesink);
-    GST_DEBUG_OBJECT(self, "Prepare");
-
-    return GST_FLOW_OK;
 }
 
 static GstFlowReturn 
