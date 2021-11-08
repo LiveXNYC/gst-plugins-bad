@@ -214,9 +214,11 @@ gst_ndi_video_src_start(GstBaseSrc* src)
     self->timestamp_offset = 0;
     self->n_frames = 0;
 
-    if (gst_ndi_video_src_acquire_input(self)) {
-        GstBuffer* buf = g_async_queue_timeout_pop(self->queue, 15000000);
-        if (buf) {
+    gboolean res = gst_ndi_video_src_acquire_input(self);
+    if (res) {
+        GstBuffer* buf = g_async_queue_timeout_pop(self->queue, 3000000);
+        res = buf != NULL;
+        if (res) {
             if (self->caps) {
                 gst_caps_unref(self->caps);
             }
@@ -225,8 +227,14 @@ gst_ndi_video_src_start(GstBaseSrc* src)
             self->last_buffer = buf;
             gst_buffer_ref(self->last_buffer);
         }
+        else {
+            gst_ndi_video_src_release_input(self);
+        }
     }
-    return TRUE;
+
+    GST_DEBUG_OBJECT(self, "Start %s", res ? "succed" : "failed");
+
+    return res;
 }
 
 static gboolean
