@@ -9,7 +9,7 @@ typedef struct _GstNdiInputPriv GstNdiInputPriv;
 
 struct _GstNdiInput {
     /* Set by the video source */
-    void (*got_video_frame) (GstElement* ndi_device, gint8* buffer, guint size, gboolean is_caps_changed);
+    void (*got_video_frame) (GstElement* ndi_device, gint8* buffer, guint size, gboolean is_caps_changed, void* id);
 
     /* Set by the audio source */
     void (*got_audio_frame) (GstElement* ndi_device, gint8* buffer, guint size, guint stride, gboolean is_caps_changed);
@@ -24,6 +24,7 @@ GstCaps*     gst_ndi_input_get_video_caps(GstNdiInput* input);
 int gst_ndi_input_get_frame_rate_n(GstNdiInput* input);
 int gst_ndi_input_get_frame_rate_d(GstNdiInput* input);
 GstClockTime gst_ndi_input_get_video_buffer_duration(GstNdiInput* input);
+void gst_ndi_input_release_video_buffer(GstNdiInput* input, void* id);
 
 GstCaps* gst_ndi_input_get_audio_caps(GstNdiInput* input);
 GstClockTime gst_ndi_input_get_audio_buffer_duration(GstNdiInput* input);

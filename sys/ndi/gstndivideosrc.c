@@ -138,6 +138,7 @@ gst_ndi_video_src_finalize(GObject* object)
             gst_buffer_unref(buffer);
         }
         g_async_queue_unref(self->queue);
+        self->queue = NULL;
     }
 
     gst_ndi_video_src_free_last_buffer(self);
@@ -408,8 +409,28 @@ gst_ndi_video_src_create(GstPushSrc* pushsrc, GstBuffer** buffer)
     return GST_FLOW_ERROR;
 }
 
+typedef struct
+{
+    GstNdiVideoSrc* self;
+    void* id;
+} VideoFrameWrapper;
+
+static void
+video_frame_free(void* data)
+{
+    VideoFrameWrapper* obj = (VideoFrameWrapper*)data;
+    GstNdiVideoSrc* self = GST_NDI_VIDEO_SRC(obj->self);
+
+    g_mutex_lock(&self->input_mutex);
+    if (self->input != NULL) {
+        gst_ndi_input_release_video_buffer(self->input, obj->id);
+    }
+    g_mutex_unlock(&self->input_mutex);
+    g_free(obj);
+}
+
 static void 
-gst_ndi_video_src_got_frame(GstElement* ndi_device, gint8* buffer, guint size, gboolean is_caps_changed) {
+gst_ndi_video_src_got_frame(GstElement* ndi_device, gint8* buffer, guint size, gboolean is_caps_changed, void* id) {
     GstNdiVideoSrc* self = GST_NDI_VIDEO_SRC(ndi_device);
 
     if (is_caps_changed || self->caps == NULL) {
@@ -427,8 +448,15 @@ gst_ndi_video_src_got_frame(GstElement* ndi_device, gint8* buffer, guint size, g
         return;
     }
 
-    GstBuffer* buf = gst_buffer_new_allocate(NULL, size, NULL);
-    gst_buffer_fill(buf, 0, buffer, size);
+    /*GstBuffer* buf = gst_buffer_new_allocate(NULL, size, NULL);
+    gst_buffer_fill(buf, 0, buffer, size);*/
+    
+    VideoFrameWrapper* obj = (VideoFrameWrapper*)g_malloc0(sizeof(VideoFrameWrapper));
+    obj->self = self;
+    obj->id = id;
+    GstBuffer* buf = gst_buffer_new_wrapped_full((GstMemoryFlags)GST_MEMORY_FLAG_READONLY,
+        (gpointer)buffer, size, 0, size,
+        obj, (GDestroyNotify)video_frame_free);
     
     g_async_queue_push(self->queue, buf);
 
