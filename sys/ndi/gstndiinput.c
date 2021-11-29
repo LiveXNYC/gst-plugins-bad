@@ -418,6 +418,7 @@ void gst_ndi_input_release_video_buffer(GstNdiInput* input, void* id) {
         if (id == data) {
             NDIlib_recv_free_video_v2(priv->pNDI_recv, (NDIlib_video_frame_v2_t*)id);
             g_free(id);
+            break;
         }
         else {
             g_async_queue_push_unlocked(priv->queue, data);
