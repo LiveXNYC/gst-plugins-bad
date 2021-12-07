@@ -125,18 +125,19 @@ gst_ndi_input_capture(GstNdiInput* self, const gchar* id) {
     priv->queue = g_async_queue_new();
 
     NDIlib_audio_frame_v2_t audio_frame;
-    //NDIlib_video_frame_v2_t video_frame;
-    
     while (!priv->is_capture_terminated) {
-        NDIlib_video_frame_v2_t* video_frame = (NDIlib_video_frame_v2_t*)g_malloc0(sizeof(NDIlib_video_frame_v2_t));
+        NDIlib_video_frame_v2_t* video_frame = (priv->videosrc == NULL) ? NULL : (NDIlib_video_frame_v2_t*)g_malloc0(sizeof(NDIlib_video_frame_v2_t));
         NDIlib_frame_type_e res = NDIlib_recv_capture_v2(priv->pNDI_recv, video_frame, &audio_frame, NULL, 500);
         if (res == NDIlib_frame_type_video) {
-            g_async_queue_push(priv->queue, video_frame);
-            gst_ndi_input_update_video_input(self, video_frame);
-            //NDIlib_recv_free_video_v2(priv->pNDI_recv, &video_frame);
+            if ((priv->videosrc != NULL)) {
+                g_async_queue_push(priv->queue, video_frame);
+                gst_ndi_input_update_video_input(self, video_frame);
+            }
         }
         else {
-            g_free(video_frame);
+            if (video_frame != NULL) {
+                g_free(video_frame);
+            }
 
             if (res == NDIlib_frame_type_audio) {
                 gst_ndi_input_update_audio_input(self, &audio_frame);
