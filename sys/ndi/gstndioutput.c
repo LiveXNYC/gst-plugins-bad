@@ -186,8 +186,11 @@ gst_ndi_output_create_video_frame(GstNdiOutput* output, GstCaps* caps)
     output->priv->NDI_video_frame.yres = videoInfo.height;
     output->priv->NDI_video_frame.frame_rate_N = videoInfo.fps_n;
     output->priv->NDI_video_frame.frame_rate_D = videoInfo.fps_d;
+    double par = 1;
+    gst_util_fraction_to_double(videoInfo.par_n, videoInfo.par_d, &par);
+    output->priv->NDI_video_frame.picture_aspect_ratio = ((double)videoInfo.width / videoInfo.height) * par;
 
-    GST_DEBUG("videoInfo.size %lu", videoInfo.size);
+    GST_DEBUG("videoInfo.size %lu, PAR %.03f", videoInfo.size, output->priv->NDI_video_frame.picture_aspect_ratio);
     //output->priv->NDI_video_frame.p_data = (uint8_t*)malloc(output->priv->NDI_video_frame.line_stride_in_bytes * output->priv->NDI_video_frame.yres);
     //output->priv->NDI_video_frame.p_data = (uint8_t*)malloc(videoInfo.size * 2);
 
