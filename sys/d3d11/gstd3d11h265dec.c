@@ -1459,7 +1459,7 @@ gst_d3d11_h265_dec_register (GstPlugin * plugin, GstD3D11Device * device,
 
   sink_caps = gst_caps_from_string ("video/x-h265, "
       "stream-format=(string) { hev1, hvc1, byte-stream }, "
-      "alignment= (string) au, " "framerate = " GST_VIDEO_FPS_RANGE);
+      "alignment= (string) au");
   src_caps = gst_caps_from_string ("video/x-raw("
       GST_CAPS_FEATURE_MEMORY_D3D11_MEMORY "), "
       "framerate = " GST_VIDEO_FPS_RANGE ";"
