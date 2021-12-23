@@ -448,15 +448,15 @@ gst_ndi_video_src_got_frame(GstElement* ndi_device, gint8* buffer, guint size, g
         return;
     }
 
-    /*GstBuffer* buf = gst_buffer_new_allocate(NULL, size, NULL);
-    gst_buffer_fill(buf, 0, buffer, size);*/
+    GstBuffer* buf = gst_buffer_new_allocate(NULL, size, NULL);
+    gst_buffer_fill(buf, 0, buffer, size);
     
-    VideoFrameWrapper* obj = (VideoFrameWrapper*)g_malloc0(sizeof(VideoFrameWrapper));
+    /*VideoFrameWrapper* obj = (VideoFrameWrapper*)g_malloc0(sizeof(VideoFrameWrapper));
     obj->self = self;
     obj->id = id;
     GstBuffer* buf = gst_buffer_new_wrapped_full((GstMemoryFlags)GST_MEMORY_FLAG_READONLY,
         (gpointer)buffer, size, 0, size,
-        obj, (GDestroyNotify)video_frame_free);
+        obj, (GDestroyNotify)video_frame_free);*/
     
     g_async_queue_push(self->queue, buf);
 

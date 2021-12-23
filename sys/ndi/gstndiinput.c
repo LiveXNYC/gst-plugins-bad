@@ -132,6 +132,7 @@ gst_ndi_input_capture(GstNdiInput* self, const gchar* id) {
             if ((priv->videosrc != NULL)) {
                 g_async_queue_push(priv->queue, video_frame);
                 gst_ndi_input_update_video_input(self, video_frame);
+                gst_ndi_input_release_video_buffer(self, video_frame);
             }
         }
         else {
