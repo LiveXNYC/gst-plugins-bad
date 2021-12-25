@@ -297,6 +297,10 @@ gstcheck_dep = dependency('gstreamer-check-1.0', version : gst_req,
     required : get_option('tests'),
     fallback : ['gstreamer', 'gst_check_dep'])
 
+gst_req = '>= @0@.@1@.0'.format(gst_version_major, gst_version_minor)
+gstbase_dep = dependency('gstreamer-base-1.0', version : gst_req,
+  fallback : ['gstreamer', 'gst_base_dep'])
+
 # GStreamer OpenGL
 gstgl_dep = dependency('gstreamer-gl-1.0', version : gst_req,
     fallback : ['gst-plugins-base', 'gstgl_dep'], required: get_option('gl'))
@@ -462,13 +466,13 @@ if get_option('default_library') == 'shared'
 endif
 
 subdir('gst-libs')
-subdir('gst')
+# subdir('gst')
 subdir('sys')
-subdir('ext')
-subdir('tests')
-subdir('data')
-subdir('tools')
-subdir('pkgconfig')
+# subdir('ext')
+# subdir('tests')
+# subdir('data')
+# subdir('tools')
+# subdir('pkgconfig')
 
 if have_orcc
   update_orc_dist_files = find_program('scripts/update-orc-dist-files.py')
@@ -517,7 +521,7 @@ endif
 
 configure_file(output : 'config.h', configuration : cdata)
 
-run_command(python3, '-c', 'import shutil; shutil.copy("hooks/pre-commit.hook", ".git/hooks/pre-commit")')
+# run_command(python3, '-c', 'import shutil; shutil.copy("hooks/pre-commit.hook", ".git/hooks/pre-commit")')
 
 subdir('docs')
 
