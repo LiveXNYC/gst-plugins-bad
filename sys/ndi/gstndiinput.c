@@ -132,7 +132,7 @@ gst_ndi_input_capture(GstNdiInput* self, const gchar* id) {
             if ((priv->videosrc != NULL)) {
                 g_async_queue_push(priv->queue, video_frame);
                 gst_ndi_input_update_video_input(self, video_frame);
-                gst_ndi_input_release_video_buffer(self, video_frame);
+                //gst_ndi_input_release_video_buffer(self, video_frame);
             }
         }
         else {
@@ -410,16 +410,37 @@ GstClockTime gst_ndi_input_get_video_buffer_duration(GstNdiInput* input) {
     return res;
 }
 
-void gst_ndi_input_release_video_buffer(GstNdiInput* input, void* id) {
+void gst_ndi_input_get_video_buffer(GstNdiInput* input, void* id, gint8** buffer, guint* size) {
     GstNdiInputPriv* priv = input->priv;
 
     g_async_queue_lock(priv->queue);
     gint length = g_async_queue_length_unlocked(priv->queue);
     for (gint i = 0; i < length; ++i) {
         gpointer data = g_async_queue_pop_unlocked(priv->queue);
+        g_async_queue_push_unlocked(priv->queue, data);
+        if (id == data) {
+            *buffer = ((NDIlib_video_frame_v2_t*)id)->p_data;
+            *size = ((NDIlib_video_frame_v2_t*)id)->data_size_in_bytes;
+            break;
+        }
+    }
+    g_async_queue_unlock(priv->queue);
+}
+
+void gst_ndi_input_release_video_buffer(GstNdiInput* input, void* id) {
+    GstNdiInputPriv* priv = input->priv;
+    gboolean found = FALSE;
+
+    g_async_queue_lock(priv->queue);
+    gint length = g_async_queue_length_unlocked(priv->queue);
+    GST_DEBUG("Search %p. Total: %i", id, length);
+    for (gint i = 0; i < length; ++i) {
+        gpointer data = g_async_queue_pop_unlocked(priv->queue);
         if (id == data) {
             NDIlib_recv_free_video_v2(priv->pNDI_recv, (NDIlib_video_frame_v2_t*)id);
-            g_free(id);
+            GST_DEBUG("Found %p", id);
+            g_free((NDIlib_video_frame_v2_t *)id);
+            found = true;
             break;
         }
         else {
@@ -427,6 +448,10 @@ void gst_ndi_input_release_video_buffer(GstNdiInput* input, void* id) {
         }
     }
     g_async_queue_unlock(priv->queue);
+
+    if (!found) {
+        GST_DEBUG("_____ NOT Found %p", id);
+    }
 }
 
 static void

@@ -15,24 +15,14 @@ G_BEGIN_DECLS
 #define GST_NDI_VIDEO_SRC_GET_CLASS(obj)   (G_TYPE_INSTANCE_GET_CLASS((obj), GST_TYPE_NDI_VIDEO_SRC, GstNdiVideoSrcClass))
 
 typedef struct _GstNdiVideoSrc        GstNdiVideoSrc;
+typedef struct _GstNdiVideoSrcPriv    GstNdiVideoSrcPriv;
 typedef struct _GstNdiVideoSrcClass   GstNdiVideoSrcClass;
 
 struct _GstNdiVideoSrc
 {
     GstPushSrc parent;
 
-    GstNdiInput* input;
-    GMutex input_mutex;
-    gchar* device_path;
-    gchar* device_name;
-    GstCaps* caps;
-
-    GAsyncQueue* queue;
-    GstBuffer* last_buffer;
-    guint64 n_frames;
-    GstClockTime timestamp_offset;
-    gboolean is_eos;
-    guint64 buffer_duration;
+    GstNdiVideoSrcPriv* priv;
 };
 
 struct _GstNdiVideoSrcClass

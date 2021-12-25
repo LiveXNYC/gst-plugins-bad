@@ -17,6 +17,29 @@ enum
     PROP_DEVICE_NAME,
 };
 
+typedef struct
+{
+    GstBuffer* buffer;
+    void* id;
+} VideoBufferWrapper;
+
+struct _GstNdiVideoSrcPriv
+{
+    GstNdiInput* input;
+    GMutex input_mutex;
+    gchar* device_path;
+    gchar* device_name;
+    GstCaps* caps;
+    VideoBufferWrapper* last_buffer_wrapper;
+
+    GAsyncQueue* queue;
+    guint64 n_frames;
+    GstClockTime timestamp_offset;
+    gboolean is_eos;
+    guint64 buffer_duration;
+};
+
+
 static int MAX_QUEUE_LENGTH = 10;
 
 static GstStaticPadTemplate src_template = GST_STATIC_PAD_TEMPLATE("src",
@@ -47,7 +70,6 @@ gst_ndi_video_src_get_times(GstBaseSrc* src, GstBuffer* buffer,
 
 static gboolean gst_ndi_video_src_acquire_input(GstNdiVideoSrc* self);
 static void gst_ndi_video_src_release_input(GstNdiVideoSrc* self);
-static void gst_ndi_video_src_free_last_buffer(GstNdiVideoSrc* self);
 
 #define gst_ndi_video_src_parent_class parent_class
 G_DEFINE_TYPE(GstNdiVideoSrc, gst_ndi_video_src, GST_TYPE_PUSH_SRC);
@@ -105,13 +127,14 @@ gst_ndi_video_src_init(GstNdiVideoSrc* self)
     gst_base_src_set_live(GST_BASE_SRC(self), TRUE);
     gst_base_src_set_do_timestamp(GST_BASE_SRC(self), TRUE);
 
-    self->device_path = NULL;
-    self->device_name = NULL;
-    self->caps = NULL;
-    self->queue = g_async_queue_new();
-    self->last_buffer = NULL;
-    self->is_eos = FALSE;
-    self->buffer_duration = GST_MSECOND;
+    self->priv = g_new0(GstNdiVideoSrcPriv, 1);
+
+    self->priv->device_path = NULL;
+    self->priv->device_name = NULL;
+    self->priv->caps = NULL;
+    self->priv->queue = g_async_queue_new();
+    self->priv->is_eos = FALSE;
+    self->priv->buffer_duration = GST_MSECOND;
 }
 
 static void
@@ -123,29 +146,21 @@ gst_ndi_video_src_finalize(GObject* object)
     
     gst_ndi_video_src_release_input(self);
 
-    if (self->device_name) {
-        g_free(self->device_name);
-        self->device_name = NULL;
+    if (self->priv->device_name) {
+        g_free(self->priv->device_name);
+        self->priv->device_name = NULL;
     }
-    if (self->device_path) {
-        g_free(self->device_path);
-        self->device_path = NULL;
-    }
-
-    if (self->queue) {
-        while (g_async_queue_length(self->queue) > 0) {
-            GstBuffer* buffer = (GstBuffer*)g_async_queue_pop(self->queue);
-            gst_buffer_unref(buffer);
-        }
-        g_async_queue_unref(self->queue);
-        self->queue = NULL;
+    if (self->priv->device_path) {
+        g_free(self->priv->device_path);
+        self->priv->device_path = NULL;
     }
 
-    gst_ndi_video_src_free_last_buffer(self);
-
-    if (self->caps) {
-        gst_caps_unref(self->caps);
+    if (self->priv->caps) {
+        gst_caps_unref(self->priv->caps);
     }
+
+    g_free(self->priv);
+    self->priv = NULL;
 
     G_OBJECT_CLASS(parent_class)->finalize(object);
 }
@@ -158,10 +173,10 @@ gst_ndi_video_src_get_property(GObject* object, guint prop_id, GValue* value,
 
     switch (prop_id) {
     case PROP_DEVICE_PATH:
-        g_value_set_string(value, self->device_path);
+        g_value_set_string(value, self->priv->device_path);
         break;
     case PROP_DEVICE_NAME:
-        g_value_set_string(value, self->device_name);
+        g_value_set_string(value, self->priv->device_name);
         break;
     default:
         G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
@@ -177,14 +192,14 @@ gst_ndi_video_src_set_property(GObject* object, guint prop_id,
 
     switch (prop_id) {
     case PROP_DEVICE_PATH:
-        g_free(self->device_path);
-        self->device_path = g_value_dup_string(value);
-        GST_DEBUG_OBJECT(self, "%s", self->device_path);
+        g_free(self->priv->device_path);
+        self->priv->device_path = g_value_dup_string(value);
+        GST_DEBUG_OBJECT(self, "%s", self->priv->device_path);
         break;
     case PROP_DEVICE_NAME:
-        g_free(self->device_name);
-        self->device_name = g_value_dup_string(value);
-        GST_DEBUG_OBJECT(self, "%s", self->device_name);
+        g_free(self->priv->device_name);
+        self->priv->device_name = g_value_dup_string(value);
+        GST_DEBUG_OBJECT(self, "%s", self->priv->device_name);
         break;
     default:
         G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
@@ -195,12 +210,12 @@ gst_ndi_video_src_set_property(GObject* object, guint prop_id,
 static GstCaps*
 gst_ndi_video_src_get_input_caps(GstNdiVideoSrc* self) {
     GstCaps* caps = NULL;
-    g_mutex_lock(&self->input_mutex);
-    if (self->input != NULL) {
-        caps = gst_ndi_input_get_video_caps(self->input);
-        self->buffer_duration = gst_ndi_input_get_video_buffer_duration(self->input);
+    g_mutex_lock(&self->priv->input_mutex);
+    if (self->priv->input != NULL) {
+        caps = gst_ndi_input_get_video_caps(self->priv->input);
+        self->priv->buffer_duration = gst_ndi_input_get_video_buffer_duration(self->priv->input);
     }
-    g_mutex_unlock(&self->input_mutex);
+    g_mutex_unlock(&self->priv->input_mutex);
 
     return caps;
 }
@@ -212,28 +227,29 @@ gst_ndi_video_src_start(GstBaseSrc* src)
     
     GST_DEBUG_OBJECT(self, "Start");
 
-    self->timestamp_offset = 0;
-    self->n_frames = 0;
+    self->priv->timestamp_offset = 0;
+    self->priv->n_frames = 0;
 
     gboolean res = gst_ndi_video_src_acquire_input(self);
     if (res) {
-        GstBuffer* buf = g_async_queue_timeout_pop(self->queue, 3000000);
-        res = buf != NULL;
+        VideoBufferWrapper* bufferWrapper = g_async_queue_timeout_pop(self->priv->queue, 3000000);
+        res = bufferWrapper != NULL;
         if (res) {
-            if (self->caps) {
-                gst_caps_unref(self->caps);
+            if (self->priv->caps) {
+                gst_caps_unref(self->priv->caps);
             }
 
-            self->caps = gst_ndi_video_src_get_input_caps(self);
-            self->last_buffer = buf;
-            gst_buffer_ref(self->last_buffer);
+            self->priv->caps = gst_ndi_video_src_get_input_caps(self);
+            gst_buffer_unref(bufferWrapper->buffer);
+            gst_ndi_input_release_video_buffer(self->priv->input, bufferWrapper->id);
+            g_free(bufferWrapper);
         }
         else {
             gst_ndi_video_src_release_input(self);
         }
     }
 
-    GST_DEBUG_OBJECT(self, "Start %s", res ? "succed" : "failed");
+    GST_DEBUG_OBJECT(self, "Start %s", res ? "succeed" : "failed");
 
     return res;
 }
@@ -266,8 +282,8 @@ gst_ndi_video_src_get_caps(GstBaseSrc* src, GstCaps* filter)
     GstNdiVideoSrc* self = GST_NDI_VIDEO_SRC(src);
     GstCaps* caps = NULL;
 
-    if (self->caps != NULL) {
-        caps = gst_caps_copy(self->caps);
+    if (self->priv->caps != NULL) {
+        caps = gst_caps_copy(self->priv->caps);
     }
 
     if (!caps)
@@ -288,7 +304,7 @@ static GstCaps*
 gst_ndi_video_src_fixate(GstBaseSrc* src, GstCaps* caps) {
     GstNdiVideoSrc* self = GST_NDI_VIDEO_SRC(src);
 
-    if (self->input == NULL) {
+    if (self->priv->input == NULL) {
         return caps;
     }
 
@@ -305,7 +321,7 @@ gst_ndi_video_src_fixate(GstBaseSrc* src, GstCaps* caps) {
         gst_structure_fixate_field_nearest_int(structure, "width", G_MAXINT);
         gst_structure_fixate_field_nearest_int(structure, "height", G_MAXINT);
         gst_structure_fixate_field_nearest_fraction(structure, "framerate",
-            gst_ndi_input_get_frame_rate_n(self->input), gst_ndi_input_get_frame_rate_d(self->input));
+            gst_ndi_input_get_frame_rate_n(self->priv->input), gst_ndi_input_get_frame_rate_d(self->priv->input));
     }
 
     fixated_caps = gst_caps_fixate(fixated_caps);
@@ -355,28 +371,32 @@ static GstFlowReturn
 gst_ndi_video_src_create(GstPushSrc* pushsrc, GstBuffer** buffer)
 {
     GstNdiVideoSrc* self = GST_NDI_VIDEO_SRC(pushsrc);
+    GstNdiVideoSrcPriv* priv = self->priv;
 
-    if (self->is_eos) {
+    if (priv->is_eos) {
         GST_DEBUG_OBJECT(self, "Caps was changed. EOS");
         *buffer = NULL;
         return GST_FLOW_EOS;
     }
-
-    guint64 us_timeout = GST_TIME_AS_USECONDS(self->buffer_duration);
-    GstBuffer* buf = g_async_queue_timeout_pop(self->queue, us_timeout);
-    if (buf) {
+    GstBuffer* buf = NULL;
+    guint64 us_timeout = GST_TIME_AS_USECONDS(priv->buffer_duration);
+    VideoBufferWrapper* bufferWrapper = g_async_queue_timeout_pop(priv->queue, us_timeout);
+    if (bufferWrapper) {
         //GST_DEBUG_OBJECT(self, "Got a buffer. Total: %i", g_async_queue_length(self->queue));
-        gst_ndi_video_src_free_last_buffer(self);
-        
-        self->last_buffer = buf;
-        gst_buffer_ref(self->last_buffer);
+        buf = bufferWrapper->buffer;
+        if (priv->last_buffer_wrapper) {
+            gst_ndi_input_release_video_buffer(priv->input, priv->last_buffer_wrapper->id);
+            g_free(priv->last_buffer_wrapper);
+        }
+        priv->last_buffer_wrapper = bufferWrapper;
     }
     else {
         GST_DEBUG_OBJECT(self, "No buffer");
-        if (self->last_buffer) {
-            gst_buffer_ref(self->last_buffer);
-            buf = self->last_buffer;
-        }
+        gint8* buffer = NULL;
+        guint size = 0;
+        gst_ndi_input_get_video_buffer(priv->input, priv->last_buffer_wrapper->id, &buffer, &size);
+        buf = gst_buffer_new_allocate(NULL, size, NULL);
+        gst_buffer_fill(buf, 0, buffer, size);
     }
 
     if (buf) {
@@ -387,19 +407,19 @@ gst_ndi_video_src_create(GstPushSrc* pushsrc, GstBuffer** buffer)
             GST_CLOCK_DIFF(gst_element_get_base_time(GST_ELEMENT(pushsrc)), gst_clock_get_time(clock));
         gst_object_unref(clock);
         
-        GST_BUFFER_PTS(buf) = t + self->buffer_duration;
-        GST_BUFFER_DURATION(buf) = self->buffer_duration;
+        GST_BUFFER_PTS(buf) = t + priv->buffer_duration;
+        GST_BUFFER_DURATION(buf) = priv->buffer_duration;
 
-        GST_BUFFER_OFFSET(buf) = self->n_frames;
-        GST_BUFFER_OFFSET_END(buf) = self->n_frames + 1;
+        GST_BUFFER_OFFSET(buf) = priv->n_frames;
+        GST_BUFFER_OFFSET_END(buf) = priv->n_frames + 1;
 
-        GST_DEBUG_OBJECT(self, "create for %llu ts %" GST_TIME_FORMAT" %"GST_TIME_FORMAT, self->n_frames, GST_TIME_ARGS(t), GST_TIME_ARGS(GST_BUFFER_PTS(buf)));
+        GST_DEBUG_OBJECT(self, "create for %llu ts %" GST_TIME_FORMAT" %"GST_TIME_FORMAT, priv->n_frames, GST_TIME_ARGS(t), GST_TIME_ARGS(GST_BUFFER_PTS(buf)));
 
         GST_BUFFER_FLAG_UNSET(buf, GST_BUFFER_FLAG_DISCONT);
-        if (self->n_frames == 0) {
+        if (priv->n_frames == 0) {
             GST_BUFFER_FLAG_SET(buf, GST_BUFFER_FLAG_DISCONT);
         }
-        self->n_frames++;
+        priv->n_frames++;
 
         
         *buffer = buf;
@@ -421,30 +441,31 @@ video_frame_free(void* data)
     VideoFrameWrapper* obj = (VideoFrameWrapper*)data;
     GstNdiVideoSrc* self = GST_NDI_VIDEO_SRC(obj->self);
 
-    g_mutex_lock(&self->input_mutex);
-    if (self->input != NULL) {
-        gst_ndi_input_release_video_buffer(self->input, obj->id);
+    g_mutex_lock(&self->priv->input_mutex);
+    if (self->priv->input != NULL) {
+        gst_ndi_input_release_video_buffer(self->priv->input, obj->id);
     }
-    g_mutex_unlock(&self->input_mutex);
+    g_mutex_unlock(&self->priv->input_mutex);
     g_free(obj);
 }
 
 static void 
 gst_ndi_video_src_got_frame(GstElement* ndi_device, gint8* buffer, guint size, gboolean is_caps_changed, void* id) {
     GstNdiVideoSrc* self = GST_NDI_VIDEO_SRC(ndi_device);
+    GstNdiVideoSrcPriv* priv = self->priv;
 
-    if (is_caps_changed || self->caps == NULL) {
-        if (self->caps != NULL) {
+    if (is_caps_changed || priv->caps == NULL) {
+        if (priv->caps != NULL) {
             GST_DEBUG_OBJECT(self, "caps changed");
-            self->is_eos = TRUE;
-            gst_caps_unref(self->caps);
+            priv->is_eos = TRUE;
+            gst_caps_unref(priv->caps);
         }
 
-        self->caps = gst_ndi_video_src_get_input_caps(self);
-        GST_DEBUG_OBJECT(self, "new caps %" GST_PTR_FORMAT, self->caps);
+        priv->caps = gst_ndi_video_src_get_input_caps(self);
+        GST_DEBUG_OBJECT(self, "new caps %" GST_PTR_FORMAT, priv->caps);
     }
 
-    if (self->is_eos) {
+    if (priv->is_eos) {
         return;
     }
 
@@ -458,60 +479,80 @@ gst_ndi_video_src_got_frame(GstElement* ndi_device, gint8* buffer, guint size, g
         (gpointer)buffer, size, 0, size,
         obj, (GDestroyNotify)video_frame_free);*/
     
-    g_async_queue_push(self->queue, buf);
+    VideoBufferWrapper* bufferWrapper = g_new0(VideoBufferWrapper, 1);
+    bufferWrapper->buffer = buf;
+    bufferWrapper->id = id;
+    g_async_queue_push(priv->queue, bufferWrapper);
 
-    gint queue_length = g_async_queue_length(self->queue);
+    gint queue_length = g_async_queue_length(priv->queue);
     if (queue_length > MAX_QUEUE_LENGTH) {
-        GstBuffer* buffer = (GstBuffer*)g_async_queue_pop(self->queue);
+        GstBuffer* buffer = (GstBuffer*)g_async_queue_pop(priv->queue);
         gst_buffer_unref(buffer);
     }
-    GST_DEBUG_OBJECT(self, "Got a frame. Total: %i", queue_length);
+    GST_DEBUG_OBJECT(self, "Got a frame %p. Total: %i", id, queue_length);
 }
 
 static gboolean
 gst_ndi_video_src_acquire_input(GstNdiVideoSrc* self) {
-    g_mutex_lock(&self->input_mutex);
-    if (self->input == NULL) {
+    GstNdiVideoSrcPriv* priv = self->priv;
+
+    g_mutex_lock(&priv->input_mutex);
+    if (priv->input == NULL) {
         GST_DEBUG_OBJECT(self, "Acquire Input");
-        self->input = gst_ndi_input_acquire(self->device_path, GST_ELEMENT(self), FALSE);
-        if (self->input) {
-            self->input->got_video_frame = gst_ndi_video_src_got_frame;
+        priv->input = gst_ndi_input_acquire(priv->device_path, GST_ELEMENT(self), FALSE);
+        if (priv->input) {
+            priv->input->got_video_frame = gst_ndi_video_src_got_frame;
         }
         else {
             GST_DEBUG_OBJECT(self, "Acquire Input FAILED");
         }
     }
-    g_mutex_unlock(&self->input_mutex);
+    g_mutex_unlock(&priv->input_mutex);
 
-    return (self->input != NULL);
+    return (priv->input != NULL);
 }
 
 static void 
 gst_ndi_video_src_release_input(GstNdiVideoSrc* self) {
-    g_mutex_lock(&self->input_mutex);
-    if (self->input != NULL) {
+    GstNdiVideoSrcPriv* priv = self->priv;
+
+    g_mutex_lock(&priv->input_mutex);
+    if (priv->input != NULL) {
         GST_DEBUG_OBJECT(self, "Release Input");
-        self->input->got_video_frame = NULL;
-        gst_ndi_input_release(self->device_path, GST_ELEMENT(self), FALSE);
-        self->input = NULL;
+        priv->input->got_video_frame = NULL;
+
+        if (priv->queue) {
+            while (g_async_queue_length(priv->queue) > 0) {
+                VideoBufferWrapper* bufferWrapper = (VideoBufferWrapper*)g_async_queue_pop(priv->queue);
+                gst_buffer_unref(bufferWrapper->buffer);
+                gst_ndi_input_release_video_buffer(priv->input, bufferWrapper->id);
+                g_free(bufferWrapper);
+            }
+            g_async_queue_unref(priv->queue);
+            priv->queue = NULL;
+        }
+
+        gst_ndi_input_release(priv->device_path, GST_ELEMENT(self), FALSE);
+        priv->input = NULL;
     }
-    g_mutex_unlock(&self->input_mutex);
+    g_mutex_unlock(&priv->input_mutex);
 }
 
 static gboolean 
 gst_ndi_video_src_query(GstBaseSrc* bsrc, GstQuery* query) {
     GstNdiVideoSrc* self = GST_NDI_VIDEO_SRC(bsrc);
+    GstNdiVideoSrcPriv* priv = self->priv;
     gboolean ret = TRUE;
 
     switch (GST_QUERY_TYPE(query)) {
     case GST_QUERY_LATENCY: {
-        g_mutex_lock(&self->input_mutex);
-        if (self->input) {
+        g_mutex_lock(&priv->input_mutex);
+        if (priv->input) {
             GstClockTime min, max;
 
             min = gst_util_uint64_scale_ceil(GST_SECOND
-                , gst_ndi_input_get_frame_rate_d(self->input)
-                , gst_ndi_input_get_frame_rate_n(self->input));
+                , gst_ndi_input_get_frame_rate_d(priv->input)
+                , gst_ndi_input_get_frame_rate_n(priv->input));
             max = 5 * min;
             gst_query_set_latency(query, TRUE, min, max);
 
@@ -522,7 +563,7 @@ gst_ndi_video_src_query(GstBaseSrc* bsrc, GstQuery* query) {
         else {
             ret = FALSE;
         }
-        g_mutex_unlock(&self->input_mutex);
+        g_mutex_unlock(&priv->input_mutex);
         break;
     }
     default:
@@ -531,12 +572,4 @@ gst_ndi_video_src_query(GstBaseSrc* bsrc, GstQuery* query) {
     }
 
     return ret;
-}
-
-static void
-gst_ndi_video_src_free_last_buffer(GstNdiVideoSrc* self) {
-    if (self->last_buffer) {
-        gst_buffer_unref(self->last_buffer);
-        self->last_buffer = NULL;
-    }
 }
