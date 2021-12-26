@@ -410,7 +410,7 @@ GstClockTime gst_ndi_input_get_video_buffer_duration(GstNdiInput* input) {
     return res;
 }
 
-void gst_ndi_input_get_video_buffer(GstNdiInput* input, void* id, gint8** buffer, guint* size) {
+void gst_ndi_input_get_video_buffer(GstNdiInput* input, void* id, guint8** buffer, guint* size) {
     GstNdiInputPriv* priv = input->priv;
 
     g_async_queue_lock(priv->queue);

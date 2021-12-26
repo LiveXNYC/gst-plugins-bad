@@ -240,9 +240,7 @@ gst_ndi_video_src_start(GstBaseSrc* src)
             }
 
             self->priv->caps = gst_ndi_video_src_get_input_caps(self);
-            gst_buffer_unref(bufferWrapper->buffer);
-            gst_ndi_input_release_video_buffer(self->priv->input, bufferWrapper->id);
-            g_free(bufferWrapper);
+            self->priv->last_buffer_wrapper = bufferWrapper;
         }
         else {
             gst_ndi_video_src_release_input(self);
@@ -378,6 +376,7 @@ gst_ndi_video_src_create(GstPushSrc* pushsrc, GstBuffer** buffer)
         *buffer = NULL;
         return GST_FLOW_EOS;
     }
+
     GstBuffer* buf = NULL;
     guint64 us_timeout = GST_TIME_AS_USECONDS(priv->buffer_duration);
     VideoBufferWrapper* bufferWrapper = g_async_queue_timeout_pop(priv->queue, us_timeout);
@@ -391,12 +390,14 @@ gst_ndi_video_src_create(GstPushSrc* pushsrc, GstBuffer** buffer)
         priv->last_buffer_wrapper = bufferWrapper;
     }
     else {
-        gint8* buffer = NULL;
+        guint8* buffer = NULL;
         guint size = 0;
-        gst_ndi_input_get_video_buffer(priv->input, priv->last_buffer_wrapper->id, &buffer, &size);
+        if (priv->last_buffer_wrapper) {
+            gst_ndi_input_get_video_buffer(priv->input, priv->last_buffer_wrapper->id, &buffer, &size);
+        }
+        GST_DEBUG_OBJECT(self, "No buffer %u", size);
         buf = gst_buffer_new_allocate(NULL, size, NULL);
         gst_buffer_fill(buf, 0, buffer, size);
-        GST_DEBUG_OBJECT(self, "No buffer %u", size);
     }
 
     if (buf) {
