@@ -420,7 +420,7 @@ void gst_ndi_input_get_video_buffer(GstNdiInput* input, void* id, gint8** buffer
         g_async_queue_push_unlocked(priv->queue, data);
         if (id == data) {
             *buffer = ((NDIlib_video_frame_v2_t*)id)->p_data;
-            *size = ((NDIlib_video_frame_v2_t*)id)->data_size_in_bytes;
+            *size = ((NDIlib_video_frame_v2_t*)id)->line_stride_in_bytes * ((NDIlib_video_frame_v2_t*)id)->yres;
             break;
         }
     }

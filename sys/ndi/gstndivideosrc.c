@@ -391,12 +391,12 @@ gst_ndi_video_src_create(GstPushSrc* pushsrc, GstBuffer** buffer)
         priv->last_buffer_wrapper = bufferWrapper;
     }
     else {
-        GST_DEBUG_OBJECT(self, "No buffer");
         gint8* buffer = NULL;
         guint size = 0;
         gst_ndi_input_get_video_buffer(priv->input, priv->last_buffer_wrapper->id, &buffer, &size);
         buf = gst_buffer_new_allocate(NULL, size, NULL);
         gst_buffer_fill(buf, 0, buffer, size);
+        GST_DEBUG_OBJECT(self, "No buffer %u", size);
     }
 
     if (buf) {
@@ -420,12 +420,12 @@ gst_ndi_video_src_create(GstPushSrc* pushsrc, GstBuffer** buffer)
             GST_BUFFER_FLAG_SET(buf, GST_BUFFER_FLAG_DISCONT);
         }
         priv->n_frames++;
-
         
         *buffer = buf;
         return GST_FLOW_OK;
     }
 
+    GST_DEBUG("_____ NO BUFFER ____");
     return GST_FLOW_ERROR;
 }
 
