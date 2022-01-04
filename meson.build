@@ -297,60 +297,6 @@ gstcheck_dep = dependency('gstreamer-check-1.0', version : gst_req,
     required : get_option('tests'),
     fallback : ['gstreamer', 'gst_check_dep'])
 
-# GStreamer OpenGL
-gstgl_dep = dependency('gstreamer-gl-1.0', version : gst_req,
-    fallback : ['gst-plugins-base', 'gstgl_dep'], required: get_option('gl'))
-gstglproto_dep = dependency('gstreamer-gl-prototypes-1.0', version : gst_req,
-    fallback : ['gst-plugins-base', 'gstglproto_dep'], required: get_option('gl'))
-gstglx11_dep = dependency('', required : false)
-gstglwayland_dep = dependency('', required : false)
-gstglegl_dep = dependency('', required : false)
-
-if gstgl_dep.found()
-  if gstgl_dep.type_name() == 'pkgconfig'
-    gst_gl_apis = gstgl_dep.get_pkgconfig_variable('gl_apis').split()
-    gst_gl_winsys = gstgl_dep.get_pkgconfig_variable('gl_winsys').split()
-    gst_gl_platforms = gstgl_dep.get_pkgconfig_variable('gl_platforms').split()
-  else
-    gstbase = subproject('gst-plugins-base')
-    gst_gl_apis = gstbase.get_variable('enabled_gl_apis')
-    gst_gl_winsys = gstbase.get_variable('enabled_gl_winsys')
-    gst_gl_platforms = gstbase.get_variable('enabled_gl_platforms')
-  endif
-
-  message('GStreamer OpenGL window systems: @0@'.format(' '.join(gst_gl_winsys)))
-  message('GStreamer OpenGL platforms: @0@'.format(' '.join(gst_gl_platforms)))
-  message('GStreamer OpenGL apis: @0@'.format(' '.join(gst_gl_apis)))
-
-  foreach ws : ['x11', 'wayland', 'android', 'cocoa', 'eagl', 'win32', 'dispmanx', 'viv_fb']
-    set_variable('gst_gl_have_window_@0@'.format(ws), gst_gl_winsys.contains(ws))
-  endforeach
-
-  foreach p : ['glx', 'egl', 'cgl', 'eagl', 'wgl']
-    set_variable('gst_gl_have_platform_@0@'.format(p), gst_gl_platforms.contains(p))
-  endforeach
-
-  foreach api : ['gl', 'gles2']
-    set_variable('gst_gl_have_api_@0@'.format(api), gst_gl_apis.contains(api))
-  endforeach
-
-  # Behind specific checks because meson fails at optional dependencies with a
-  # fallback to the same subproject.  On the first failure, meson will never
-  # check the system again even if the fallback never existed.
-  # Last checked with meson 0.54.3
-  if gst_gl_have_window_x11
-    gstglx11_dep = dependency('gstreamer-gl-x11-1.0', version : gst_req,
-        fallback : ['gst-plugins-base', 'gstglx11_dep'], required: true)
-  endif
-  if gst_gl_have_window_wayland
-    gstglwayland_dep = dependency('gstreamer-gl-wayland-1.0', version : gst_req,
-        fallback : ['gst-plugins-base', 'gstglwayland_dep'], required: true)
-  endif
-  if gst_gl_have_platform_egl
-    gstglegl_dep = dependency('gstreamer-gl-egl-1.0', version : gst_req,
-        fallback : ['gst-plugins-base', 'gstglegl_dep'], required: true)
-  endif
-endif
 
 libm = cc.find_library('m', required : false)
 glib_dep = dependency('glib-2.0', version : glib_req, fallback: ['glib', 'libglib_dep'])
@@ -461,14 +407,14 @@ if get_option('default_library') == 'shared'
   plugins_pkgconfig_install_dir = disabler()
 endif
 
-subdir('gst-libs')
-subdir('gst')
+#subdir('gst-libs')
+#subdir('gst')
 subdir('sys')
-subdir('ext')
-subdir('tests')
-subdir('data')
-subdir('tools')
-subdir('pkgconfig')
+#subdir('ext')
+#subdir('tests')
+#subdir('data')
+#subdir('tools')
+#subdir('pkgconfig')
 
 if have_orcc
   update_orc_dist_files = find_program('scripts/update-orc-dist-files.py')
@@ -517,7 +463,7 @@ endif
 
 configure_file(output : 'config.h', configuration : cdata)
 
-run_command(python3, '-c', 'import shutil; shutil.copy("hooks/pre-commit.hook", ".git/hooks/pre-commit")')
+#run_command(python3, '-c', 'import shutil; shutil.copy("hooks/pre-commit.hook", ".git/hooks/pre-commit")')
 
 subdir('docs')
 
