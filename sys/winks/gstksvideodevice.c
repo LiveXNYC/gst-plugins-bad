@@ -913,6 +913,11 @@ gst_ks_read_request_pick_buffer (GstKsVideoDevice * self, ReadRequest * req)
   gboolean buffer_found = FALSE;
   guint i;
 
+  req->buf = self->allocfunc(gst_ks_video_device_get_frame_size(self),
+      KS_BUFFER_ALIGNMENT, self->allocfunc_data);
+  GST_BUFFER_FLAGS(req->buf) = 0;
+  return TRUE;
+
   buffer_found = gst_buffer_is_writable (req->buf)
       && gst_buffer_is_all_memory_writable (req->buf);
 
@@ -1084,7 +1089,8 @@ gst_ks_video_device_read_frame (GstKsVideoDevice * self, GstBuffer ** buf,
         if (G_LIKELY (hdr->DataUsed != 0)) {
           /* Assume it's a good frame */
           gst_buffer_set_size (req->buf, hdr->DataUsed);
-          *buf = gst_buffer_ref (req->buf);
+          //*buf = gst_buffer_ref (req->buf);
+          *buf = req->buf;
         }
 
         if (G_LIKELY (presentation_time != NULL))
