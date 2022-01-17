@@ -1078,7 +1078,8 @@ gst_h264_parse_process_nal (GstH264Parse * h264parse, GstH264NalUnit * nalu)
               GST_H264_PARSE_STATE_VALID_PICTURE_HEADERS))
         return FALSE;
           
-      if (h264parse->sei_pos < 0 && h264parse->update_timecode) {
+      if (nal_type != GST_H264_NAL_SLICE_IDR && h264parse->sei_pos < 0 && h264parse->update_timecode && !h264parse->header
+          && !h264parse->have_sps_in_frame && !h264parse->have_pps_in_frame) {
          h264parse->force_pic_timing_sei_pos = nalu->sc_offset;
       }
 
