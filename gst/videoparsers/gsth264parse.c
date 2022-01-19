@@ -126,6 +126,8 @@ static gboolean gst_h264_parse_src_event (GstBaseParse * parse,
     GstEvent * event);
 static void gst_h264_parse_update_src_caps (GstH264Parse * h264parse,
     GstCaps * caps);
+static GstBuffer* gst_h264_parse_set_vui_params(GstH264Parse* h264parse,
+    GstBuffer* buffer, GstH264SPS* sps);
 
 static void
 gst_h264_parse_class_init (GstH264ParseClass * klass)
@@ -242,6 +244,7 @@ gst_h264_parse_reset_frame (GstH264Parse * h264parse)
   h264parse->pic_timing_sei_size = -1;
   h264parse->force_pic_timing_sei_pos = -1;
   h264parse->pic_struct_present_flag_position = 0;
+  h264parse->vui_parameters_present_flag_position = 0;
   h264parse->keyframe = FALSE;
   h264parse->predicted = FALSE;
   h264parse->bidirectional = FALSE;
@@ -989,10 +992,13 @@ gst_h264_parse_process_nal (GstH264Parse * h264parse, GstH264NalUnit * nalu)
          }
       }
           
-      h264parse->pic_struct_present_flag_position = gst_h264_parser_find_sps(nalu);
-      if (h264parse->pic_struct_present_flag_position > 0) {
-          h264parse->pic_struct_present_flag_position += (nalu->offset + nalu->header_bytes) * 8;
-          GST_DEBUG_OBJECT(h264parse, "h264parse->pic_struct_present_flag_position %d", h264parse->pic_struct_present_flag_position);
+      gst_h264_parser_find_sps(nalu, &h264parse->vui_parameters_present_flag_position, &h264parse->pic_struct_present_flag_position);
+      if (h264parse->vui_parameters_present_flag_position > 0) {
+      	GST_DEBUG_OBJECT(h264parse, "h264parse->vui_parameters_present_flag_position %d", h264parse->vui_parameters_present_flag_position);
+      	if (h264parse->pic_struct_present_flag_position > 0) {
+          	h264parse->pic_struct_present_flag_position += (nalu->offset + nalu->header_bytes) * 8;
+          	GST_DEBUG_OBJECT(h264parse, "h264parse->pic_struct_present_flag_position %d", h264parse->pic_struct_present_flag_position);
+      	}
       }
 
       GST_DEBUG_OBJECT (h264parse, "triggering src caps check");
@@ -1009,6 +1015,28 @@ gst_h264_parse_process_nal (GstH264Parse * h264parse, GstH264NalUnit * nalu)
       }
 
       gst_h264_parser_store_nal (h264parse, sps.id, nal_type, nalu);
+      if (h264parse->sps_nals[sps.id]) {
+      	  GstMapInfo info;
+    	  if (gst_buffer_map(h264parse->sps_nals[sps.id], &info, GST_MAP_READ)) {
+        		GST_MEMDUMP_OBJECT(h264parse, "Original SPS", info.data, info.size);
+        		gst_buffer_unmap(h264parse->sps_nals[sps.id], &info);
+    	  }
+      }
+      GstBuffer* new_sps = gst_h264_parse_set_vui_params(h264parse, h264parse->sps_nals[sps.id], &sps);
+      if (new_sps != NULL) {
+        if (h264parse->sps_nals[sps.id])
+    		gst_buffer_unref (h264parse->sps_nals[sps.id]);
+
+  		h264parse->sps_nals[sps.id] = new_sps;
+  		if (h264parse->sps_nals[sps.id]) {
+      	  GstMapInfo info;
+    	  if (gst_buffer_map(h264parse->sps_nals[sps.id], &info, GST_MAP_READ)) {
+        		GST_MEMDUMP_OBJECT(h264parse, "Editted SPS", info.data, info.size);
+        		gst_buffer_unmap(h264parse->sps_nals[sps.id], &info);
+    	  }
+        }
+  	  }
+      
       gst_h264_sps_clear (&sps);
       h264parse->state |= GST_H264_PARSE_STATE_GOT_SPS;
       h264parse->header = TRUE;
@@ -3089,13 +3117,72 @@ gst_h264_parse_force_create_pic_timing_sei(GstH264Parse* h264parse,
     return out_buf;
 }
 
+static GstBuffer*
+gst_h264_parse_set_vui_params(GstH264Parse* h264parse,
+    GstBuffer* buffer, GstH264SPS* sps) {
+
+	if (!h264parse->update_timecode)
+        return NULL;
+        
+    GST_DEBUG_OBJECT(h264parse, "Meta: %d", gst_buffer_get_n_meta(buffer, GST_VIDEO_TIME_CODE_META_API_TYPE));
+    if (h264parse->vui_parameters_present_flag_position > 0
+     	&& sps->vui_parameters_present_flag == 0) {
+        
+    	GstBuffer* out_buf = gst_buffer_new();
+    		gst_buffer_copy_into(out_buf, buffer, GST_BUFFER_COPY_METADATA, 0, -1);
+    
+    		guint index = h264parse->vui_parameters_present_flag_position / 8 + 1;
+    	
+    		GST_DEBUG_OBJECT(h264parse, "CREATE VUI PARAMS");
+    	
+    		GstH264VUIParams vui_parameters;
+    		memset(&vui_parameters, 0, sizeof(GstH264VUIParams));
+    		vui_parameters.pic_struct_present_flag = TRUE;
+    	
+    	const guint8 start_code_prefix_length = 3;
+    		GstMemory* vui_params_mem = gst_h264_create_vui_params(start_code_prefix_length, &vui_parameters);
+    		gsize mem_size = gst_memory_get_sizes(vui_params_mem, NULL, NULL);
+			gst_memory_resize(vui_params_mem, start_code_prefix_length, mem_size - start_code_prefix_length);
+if (vui_params_mem) {
+      	  GstMapInfo info;
+    	  if (gst_memory_map(vui_params_mem, &info, GST_MAP_READ)) {
+        		GST_MEMDUMP_OBJECT(h264parse, "VUI", info.data, info.size);
+        		gst_memory_unmap(vui_params_mem, &info);
+    	  }
+      }
+
+        	gst_buffer_copy_into(out_buf, buffer, GST_BUFFER_COPY_MEMORY, 0, index + 1);
+        
+        	/* insert new VUI */
+        	gst_buffer_append_memory(out_buf, vui_params_mem);
+
+        	gst_buffer_copy_into(out_buf, buffer, GST_BUFFER_COPY_MEMORY,
+            	index + 1, -1);
+            
+        	//gst_buffer_copy_into(out_buf, buffer, GST_BUFFER_COPY_MEMORY, index + 1, -1);
+
+			GST_DEBUG_OBJECT(h264parse, "SET VUI PARAMS PRESENT FLAG");
+    		guint bitIndex = h264parse->vui_parameters_present_flag_position % 8;
+    		gint8 mask = 0x80 >> bitIndex;
+    		GstMapInfo info;
+    		if (gst_buffer_map(out_buf, &info, GST_MAP_WRITE)) {
+        		info.data[index] |= mask;
+        		gst_buffer_unmap(out_buf, &info);
+    		}
+    	
+    	return out_buf;
+    }
+    
+    return NULL;
+}
+
 static void
 gst_h264_parse_set_pic_struct_present_flag(GstH264Parse* h264parse,
     GstBuffer* buffer) {
 
-    if (!h264parse->update_timecode
-        || h264parse->pic_struct_present_flag_position == 0
-        || gst_buffer_get_n_meta(buffer, GST_VIDEO_TIME_CODE_META_API_TYPE) == 0)
+	if (!h264parse->update_timecode
+		|| h264parse->pic_struct_present_flag_position == 0
+	    || gst_buffer_get_n_meta(buffer, GST_VIDEO_TIME_CODE_META_API_TYPE) == 0)
         return;
 
     guint index = h264parse->pic_struct_present_flag_position / 8;

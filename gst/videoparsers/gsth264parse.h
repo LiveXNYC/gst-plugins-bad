@@ -126,6 +126,7 @@ struct _GstH264Parse
   gint pic_timing_sei_size;
   gint force_pic_timing_sei_pos;
   guint pic_struct_present_flag_position;
+  guint vui_parameters_present_flag_position;
   gboolean update_caps;
   GstAdapter *frame_out;
   gboolean keyframe;
