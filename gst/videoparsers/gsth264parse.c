@@ -128,6 +128,8 @@ static void gst_h264_parse_update_src_caps (GstH264Parse * h264parse,
     GstCaps * caps);
 static GstBuffer* gst_h264_parse_set_vui_params(GstH264Parse* h264parse,
     GstBuffer* buffer, GstH264SPS* sps);
+static void gst_h264_parse_set_pic_struct_present_flag(GstH264Parse* h264parse,
+    GstBuffer* buffer);
 
 static void
 gst_h264_parse_class_init (GstH264ParseClass * klass)
@@ -996,7 +998,7 @@ gst_h264_parse_process_nal (GstH264Parse * h264parse, GstH264NalUnit * nalu)
       if (h264parse->vui_parameters_present_flag_position > 0) {
       	GST_DEBUG_OBJECT(h264parse, "h264parse->vui_parameters_present_flag_position %d", h264parse->vui_parameters_present_flag_position);
       	if (h264parse->pic_struct_present_flag_position > 0) {
-          	h264parse->pic_struct_present_flag_position += (nalu->offset + nalu->header_bytes) * 8;
+          	//h264parse->pic_struct_present_flag_position += (nalu->offset + nalu->header_bytes) * 8;
           	GST_DEBUG_OBJECT(h264parse, "h264parse->pic_struct_present_flag_position %d", h264parse->pic_struct_present_flag_position);
       	}
       }
@@ -1028,15 +1030,16 @@ gst_h264_parse_process_nal (GstH264Parse * h264parse, GstH264NalUnit * nalu)
     		gst_buffer_unref (h264parse->sps_nals[sps.id]);
 
   		h264parse->sps_nals[sps.id] = new_sps;
-  		if (h264parse->sps_nals[sps.id]) {
+  	  }
+        /* set pic_struct_present_flag in SPS if will be needed force_create_pic_timing_sei */
+  	 gst_h264_parse_set_pic_struct_present_flag(h264parse, h264parse->sps_nals[sps.id]);
+	 if (h264parse->sps_nals[sps.id]) {
       	  GstMapInfo info;
     	  if (gst_buffer_map(h264parse->sps_nals[sps.id], &info, GST_MAP_READ)) {
         		GST_MEMDUMP_OBJECT(h264parse, "Editted SPS", info.data, info.size);
         		gst_buffer_unmap(h264parse->sps_nals[sps.id], &info);
     	  }
-        }
-  	  }
-      
+      }  
       gst_h264_sps_clear (&sps);
       h264parse->state |= GST_H264_PARSE_STATE_GOT_SPS;
       h264parse->header = TRUE;
@@ -3181,11 +3184,11 @@ gst_h264_parse_set_pic_struct_present_flag(GstH264Parse* h264parse,
     GstBuffer* buffer) {
 
 	if (!h264parse->update_timecode
-		|| h264parse->pic_struct_present_flag_position == 0
-	    || gst_buffer_get_n_meta(buffer, GST_VIDEO_TIME_CODE_META_API_TYPE) == 0)
+		|| h264parse->pic_struct_present_flag_position == 0)
+	    //|| gst_buffer_get_n_meta(buffer, GST_VIDEO_TIME_CODE_META_API_TYPE) == 0)
         return;
 
-    guint index = h264parse->pic_struct_present_flag_position / 8;
+    guint index = h264parse->pic_struct_present_flag_position / 8 + 1;
     guint bitIndex = h264parse->pic_struct_present_flag_position % 8;
     gint8 mask = 0x80 >> bitIndex;
     GstMapInfo info;
@@ -3272,7 +3275,7 @@ gst_h264_parse_pre_push_frame (GstBaseParse * parse, GstBaseParseFrame * frame)
   }
 
   /* set pic_struct_present_flag in SPS if will be needed force_create_pic_timing_sei */
-  gst_h264_parse_set_pic_struct_present_flag(h264parse, buffer);
+  //gst_h264_parse_set_pic_struct_present_flag(h264parse, buffer);
 
   /* handle timecode */
   new_buf = gst_h264_parse_create_pic_timing_sei (h264parse, buffer);
