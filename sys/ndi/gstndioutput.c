@@ -1,6 +1,7 @@
 #include "gstndioutput.h"
 #include <gst/video/video-info.h>
 #include <gst/audio/audio-info.h>
+#include <ndi/Processing.NDI.utilities.h>
 
 GST_DEBUG_CATEGORY_EXTERN(gst_ndi_debug);
 #define GST_CAT_DEFAULT gst_ndi_debug
@@ -17,7 +18,7 @@ struct _GstNdiOutputPriv {
     NDIlib_video_frame_v2_t NDI_video_frame;
     
     GstElement* audiosink;
-    NDIlib_audio_frame_v2_t NDI_audio_frame;
+    NDIlib_audio_frame_interleaved_32f_t NDI_audio_interleaved_frame;
     guint audio_frame_size;
 };
 
@@ -29,9 +30,7 @@ gst_ndi_input_free_output(gpointer data)
     GstNdiOutput* output = (GstNdiOutput*)data;
 
     NDIlib_send_destroy(output->priv->pNDI_send);
-    if (output->priv->NDI_audio_frame.p_data) {
-        free((void*)output->priv->NDI_audio_frame.p_data);
-    }
+
     g_mutex_clear(&output->priv->lock);
     g_free(output->priv);
     g_free(output);
@@ -213,6 +212,7 @@ gst_ndi_output_send_video_buffer(GstNdiOutput* output, GstBuffer* buffer) {
     GstMapInfo info;
     if (gst_buffer_map(buffer, &info, GST_MAP_READ)) {
         output->priv->NDI_video_frame.p_data = info.data;
+        //output->priv->NDI_video_frame.timecode = GST_BUFFER_PTS(buffer); //;NDIlib_send_timecode_synthesize
         NDIlib_send_send_video_v2(output->priv->pNDI_send, &output->priv->NDI_video_frame);
         gst_buffer_unmap(buffer, &info);
         return TRUE;
@@ -235,10 +235,8 @@ gst_ndi_output_create_audio_frame(GstNdiOutput* output, GstCaps* caps)
         return FALSE;
     }
 
-    output->priv->NDI_audio_frame.sample_rate = audioInfo.rate;
-    output->priv->NDI_audio_frame.no_channels = audioInfo.channels;
-    //output->priv->NDI_audio_frame.p_data = (float*)malloc(sizeof(float) * 1602 * audioInfo.channels);
-    output->priv->NDI_audio_frame.p_data = NULL;
+    output->priv->NDI_audio_interleaved_frame.sample_rate = audioInfo.rate;
+    output->priv->NDI_audio_interleaved_frame.no_channels = audioInfo.channels;
     output->priv->audio_frame_size = 0;
 
     return TRUE;
@@ -249,37 +247,13 @@ gst_ndi_output_send_audio_buffer(GstNdiOutput* output, GstBuffer* buffer)
 {
     GstMapInfo info;
     if (gst_buffer_map(buffer, &info, GST_MAP_READ)) {
-        if (output->priv->audio_frame_size != info.size) {
-            output->priv->audio_frame_size = info.size;
-
-            if (output->priv->NDI_audio_frame.p_data) {
-                free((void*)output->priv->NDI_audio_frame.p_data);
-            }
-            output->priv->NDI_audio_frame.p_data = (float*)malloc(info.size);
-        }
-
-        int channels = output->priv->NDI_audio_frame.no_channels;
-        int dest_offset = 0;
-        guint channel_counter = 0;
-        float* source = (float*)info.data;
+        output->priv->audio_frame_size = info.size;
         guint source_size = info.size / sizeof(float);
-        float* destination = (float*)output->priv->NDI_audio_frame.p_data;
-        guint dest_stride = source_size / channels;
-        for (int i = 0; i < source_size; ++i) {
-            float* dest = destination + dest_offset + dest_stride * channel_counter;
-            ++channel_counter;
-            if (channel_counter == channels) {
-                ++dest_offset;
-                channel_counter = 0;
-            }
-
-            *dest = *source;
-            ++source;
-        }
-
-        output->priv->NDI_audio_frame.no_samples = source_size / channels;
-        output->priv->NDI_audio_frame.channel_stride_in_bytes = info.size / channels;
-        NDIlib_send_send_audio_v2(output->priv->pNDI_send, &output->priv->NDI_audio_frame);
+        int channels = output->priv->NDI_audio_interleaved_frame.no_channels;
+        output->priv->NDI_audio_interleaved_frame.no_samples = source_size / channels;
+        output->priv->NDI_audio_interleaved_frame.p_data = (float*)info.data;
+        //output->priv->NDI_audio_interleaved_frame.timecode = GST_BUFFER_PTS(buffer);
+        NDIlib_util_send_send_audio_interleaved_32f(output->priv->pNDI_send, &output->priv->NDI_audio_interleaved_frame);
 
         gst_buffer_unmap(buffer, &info);
         return TRUE;
