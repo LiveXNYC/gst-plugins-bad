@@ -92,8 +92,10 @@ gst_avf_device_provider_probe (GstDeviceProvider * provider)
   GList *result;
 
   result = NULL;
-
-  NSArray *devices = [AVCaptureDevice devicesWithMediaType:AVMediaTypeVideo];
+  AVCaptureDeviceDiscoverySession *captureDeviceDiscoverySession = [AVCaptureDeviceDiscoverySession discoverySessionWithDeviceTypes:@[AVCaptureDeviceTypeBuiltInWideAngleCamera, AVCaptureDeviceTypeExternalUnknown]
+                                          mediaType:AVMediaTypeVideo
+                                           position:AVCaptureDevicePositionUnspecified];
+  NSArray *devices = [captureDeviceDiscoverySession devices];
   AVCaptureVideoDataOutput *output = [[AVCaptureVideoDataOutput alloc] init];
   for (int i = 0; i < [devices count]; i++) {
     AVCaptureDevice *device = [devices objectAtIndex:i];

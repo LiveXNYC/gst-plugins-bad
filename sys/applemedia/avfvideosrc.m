@@ -361,7 +361,10 @@ static AVCaptureVideoOrientation GstAVFVideoSourceOrientation2AVCaptureVideoOrie
       return NO;
     }
   } else { // deviceIndex takes priority over position and deviceType
-    NSArray *devices = [AVCaptureDevice devicesWithMediaType:mediaType];
+    AVCaptureDeviceDiscoverySession *captureDeviceDiscoverySession = [AVCaptureDeviceDiscoverySession discoverySessionWithDeviceTypes:@[AVCaptureDeviceTypeBuiltInWideAngleCamera, AVCaptureDeviceTypeExternalUnknown]
+                                          mediaType:AVMediaTypeVideo
+                                           position:AVCaptureDevicePositionUnspecified];
+    NSArray *devices = [captureDeviceDiscoverySession devices];
     if (deviceIndex >= [devices count]) {
       GST_ELEMENT_ERROR (element, RESOURCE, NOT_FOUND,
                           ("Invalid video capture device index"), (NULL));
