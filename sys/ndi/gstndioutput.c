@@ -212,7 +212,7 @@ gst_ndi_output_send_video_buffer(GstNdiOutput* output, GstBuffer* buffer) {
     GstMapInfo info;
     if (gst_buffer_map(buffer, &info, GST_MAP_READ)) {
         output->priv->NDI_video_frame.p_data = info.data;
-        //output->priv->NDI_video_frame.timecode = GST_BUFFER_PTS(buffer); //;NDIlib_send_timecode_synthesize
+        output->priv->NDI_video_frame.timecode = GST_BUFFER_PTS(buffer) / 100; //;NDIlib_send_timecode_synthesize
         NDIlib_send_send_video_v2(output->priv->pNDI_send, &output->priv->NDI_video_frame);
         gst_buffer_unmap(buffer, &info);
         return TRUE;
@@ -252,7 +252,7 @@ gst_ndi_output_send_audio_buffer(GstNdiOutput* output, GstBuffer* buffer)
         int channels = output->priv->NDI_audio_interleaved_frame.no_channels;
         output->priv->NDI_audio_interleaved_frame.no_samples = source_size / channels;
         output->priv->NDI_audio_interleaved_frame.p_data = (float*)info.data;
-        //output->priv->NDI_audio_interleaved_frame.timecode = GST_BUFFER_PTS(buffer);
+        output->priv->NDI_audio_interleaved_frame.timecode = GST_BUFFER_PTS(buffer) / 100;
         NDIlib_util_send_send_audio_interleaved_32f(output->priv->pNDI_send, &output->priv->NDI_audio_interleaved_frame);
 
         gst_buffer_unmap(buffer, &info);
