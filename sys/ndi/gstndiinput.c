@@ -15,7 +15,7 @@ struct _GstNdiInputPriv {
 
     /* Set by the video source */
     GstElement* videosrc;
-    GAsyncQueue* queue;
+    //GAsyncQueue* queue;
     int xres;
     int yres;
     int frame_rate_N;
@@ -89,6 +89,9 @@ gst_ndi_input_update_video_input(GstNdiInput* self, NDIlib_video_frame_v2_t* vid
         guint size = video_frame->line_stride_in_bytes * video_frame->yres;
         self->got_video_frame(priv->videosrc, (gint8*)video_frame->p_data, size, is_caps_changed, (void*)video_frame);
     }
+    else {
+    	gst_ndi_input_release_video_buffer(self, (void*)video_frame);
+    }
 }
 
 static void
@@ -122,7 +125,7 @@ gst_ndi_input_capture(GstNdiInput* self, const gchar* id) {
         }
     }
 
-    priv->queue = g_async_queue_new();
+    //priv->queue = g_async_queue_new();
 
     NDIlib_audio_frame_v2_t audio_frame;
     while (!priv->is_capture_terminated) {
@@ -130,7 +133,7 @@ gst_ndi_input_capture(GstNdiInput* self, const gchar* id) {
         NDIlib_frame_type_e res = NDIlib_recv_capture_v2(priv->pNDI_recv, video_frame, &audio_frame, NULL, 500);
         if (res == NDIlib_frame_type_video) {
             if ((priv->videosrc != NULL)) {
-                g_async_queue_push(priv->queue, video_frame);
+                //g_async_queue_push(priv->queue, video_frame);
                 gst_ndi_input_update_video_input(self, video_frame);
                 //gst_ndi_input_release_video_buffer(self, video_frame);
             }
@@ -150,7 +153,7 @@ gst_ndi_input_capture(GstNdiInput* self, const gchar* id) {
         }
     }
 
-    if (priv->queue) {
+    /*if (priv->queue) {
         while (g_async_queue_length(priv->queue) > 0) {
             NDIlib_video_frame_v2_t* video_frame = (NDIlib_video_frame_v2_t*)g_async_queue_pop(priv->queue);
             NDIlib_recv_free_video_v2(priv->pNDI_recv, video_frame);
@@ -158,7 +161,7 @@ gst_ndi_input_capture(GstNdiInput* self, const gchar* id) {
         }
         g_async_queue_unref(priv->queue);
         priv->queue = NULL;
-    }
+    }*/
 
     if (priv->pNDI_recv != NULL) {
         NDIlib_recv_destroy(priv->pNDI_recv);
@@ -411,36 +414,36 @@ GstClockTime gst_ndi_input_get_video_buffer_duration(GstNdiInput* input) {
 }
 
 void gst_ndi_input_get_video_buffer(GstNdiInput* input, void* id, guint8** buffer, guint* size) {
-    GstNdiInputPriv* priv = input->priv;
+    /*GstNdiInputPriv* priv = input->priv;
 
     g_async_queue_lock(priv->queue);
     gint length = g_async_queue_length_unlocked(priv->queue);
     for (gint i = 0; i < length; ++i) {
         gpointer data = g_async_queue_pop_unlocked(priv->queue);
         g_async_queue_push_unlocked(priv->queue, data);
-        if (id == data) {
+        if (id == data) {*/
             *buffer = ((NDIlib_video_frame_v2_t*)id)->p_data;
             *size = ((NDIlib_video_frame_v2_t*)id)->line_stride_in_bytes * ((NDIlib_video_frame_v2_t*)id)->yres;
-            break;
+            /*break;
         }
     }
-    g_async_queue_unlock(priv->queue);
+    g_async_queue_unlock(priv->queue);*/
 }
 
 void gst_ndi_input_release_video_buffer(GstNdiInput* input, void* id) {
     GstNdiInputPriv* priv = input->priv;
-    gboolean found = FALSE;
+    /*gboolean found = FALSE;
 
     g_async_queue_lock(priv->queue);
     gint length = g_async_queue_length_unlocked(priv->queue);
     GST_DEBUG("Search %p. Total: %i", id, length);
     for (gint i = 0; i < length; ++i) {
         gpointer data = g_async_queue_pop_unlocked(priv->queue);
-        if (id == data) {
+        if (id == data) {*/
             NDIlib_recv_free_video_v2(priv->pNDI_recv, (NDIlib_video_frame_v2_t*)id);
             GST_DEBUG("Found %p", id);
             g_free((NDIlib_video_frame_v2_t *)id);
-            found = true;
+            /*found = true;
             break;
         }
         else {
@@ -451,7 +454,7 @@ void gst_ndi_input_release_video_buffer(GstNdiInput* input, void* id) {
 
     if (!found) {
         GST_DEBUG("_____ NOT Found %p", id);
-    }
+    }*/
 }
 
 static void

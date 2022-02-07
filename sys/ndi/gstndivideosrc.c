@@ -487,8 +487,9 @@ gst_ndi_video_src_got_frame(GstElement* ndi_device, gint8* buffer, guint size, g
 
     gint queue_length = g_async_queue_length(priv->queue);
     if (queue_length > MAX_QUEUE_LENGTH) {
-        GstBuffer* buffer = (GstBuffer*)g_async_queue_pop(priv->queue);
-        gst_buffer_unref(buffer);
+        VideoBufferWrapper* buffer_wrapper = (VideoBufferWrapper*)g_async_queue_pop(priv->queue);
+        gst_buffer_unref(buffer_wrapper->buffer);
+        gst_ndi_input_release_video_buffer(priv->input, buffer_wrapper->id);
     }
     GST_DEBUG_OBJECT(self, "Got a frame %p. Total: %i", id, queue_length);
 }
