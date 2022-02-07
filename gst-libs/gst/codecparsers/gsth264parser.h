@@ -1332,10 +1332,23 @@ GstBuffer * gst_h264_parser_insert_sei_avc (GstH264NalParser * nalparser,
                                             GstMemory * sei);
 
 GST_CODEC_PARSERS_API
-void gst_h264_parser_find_sps(GstH264NalUnit* nalu, guint* vui_flag_position, guint* pic_flag_position);
+void gst_h264_parser_find_sps(GstH264NalUnit* nalu, guint* vui_flag_position
+                              , guint* pic_flag_position
+                              , guint* timing_info_present_flag);
 
 GST_CODEC_PARSERS_API
-GstMemory* gst_h264_create_vui_params(guint8 start_code_prefix_length, GstH264VUIParams *vui_parameters);
+GstMemory* gst_h264_parser_create_vui_params(guint8 start_code_prefix_length
+                                            , GstH264VUIParams *vui_parameters);
+
+
+GST_CODEC_PARSERS_API
+GstMemory* gst_h264_parser_create_timing_info(guint8 start_code_prefix_length
+											  , guint32 num_units_in_tick
+											  , guint32 time_scale
+											  , gboolean fixed_frame_rate_flag);
+
+GST_CODEC_PARSERS_API
+GstMemory* gst_h264_parser_insert_mem(GstMemory* into_mem, GstMemory* mem, guint bit_position, guint bit_length);
 
 G_END_DECLS
 

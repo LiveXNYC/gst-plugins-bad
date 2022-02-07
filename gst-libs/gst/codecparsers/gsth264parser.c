@@ -417,7 +417,9 @@ error:
 }
 
 static gboolean
-gst_h264_parse_vui_parameters (GstH264SPS * sps, NalReader * nr, guint* pic_position)
+gst_h264_parse_vui_parameters (GstH264SPS * sps, NalReader * nr
+                               , guint* pic_position
+                               , guint* timing_info_present_flag)
 {
   GstH264VUIParams *vui = &sps->vui_parameters;
 
@@ -467,6 +469,9 @@ gst_h264_parse_vui_parameters (GstH264SPS * sps, NalReader * nr, guint* pic_posi
     READ_UE_MAX (nr, vui->chroma_sample_loc_type_bottom_field, 5);
   }
 
+  if (timing_info_present_flag) {
+  	  *timing_info_present_flag = nal_reader_get_pos(nr);
+  }
   READ_UINT8 (nr, vui->timing_info_present_flag, 1);
   if (vui->timing_info_present_flag) {
     READ_UINT32 (nr, vui->num_units_in_tick, 32);
@@ -1663,7 +1668,9 @@ gst_h264_parser_parse_sps (GstH264NalParser * nalparser, GstH264NalUnit * nalu,
 
 /* Parse seq_parameter_set_data() */
 static gboolean
-gst_h264_parse_sps_data (NalReader * nr, GstH264SPS * sps, guint* vui_position, guint* pic_position)
+gst_h264_parse_sps_data (NalReader * nr, GstH264SPS * sps
+						, guint* vui_position, guint* pic_position
+						, guint* timing_info_present_flag)
 {
   gint width, height;
   guint subwc[] = { 1, 2, 2, 1 };
@@ -1764,7 +1771,7 @@ gst_h264_parse_sps_data (NalReader * nr, GstH264SPS * sps, guint* vui_position, 
   }
   READ_UINT8 (nr, sps->vui_parameters_present_flag, 1);
   if (sps->vui_parameters_present_flag)
-    if (!gst_h264_parse_vui_parameters (sps, nr, pic_position))
+    if (!gst_h264_parse_vui_parameters (sps, nr, pic_position, timing_info_present_flag))
       goto error;
 
   /* calculate ChromaArrayType */
@@ -1930,7 +1937,7 @@ gst_h264_parse_sps (GstH264NalUnit * nalu, GstH264SPS * sps)
   nal_reader_init (&nr, nalu->data + nalu->offset + nalu->header_bytes,
       nalu->size - nalu->header_bytes);
 
-  if (!gst_h264_parse_sps_data (&nr, sps, NULL, NULL))
+  if (!gst_h264_parse_sps_data (&nr, sps, NULL, NULL, NULL))
     goto error;
 
   sps->valid = TRUE;
@@ -1944,14 +1951,16 @@ error:
 }
 
 void 
-gst_h264_parser_find_sps(GstH264NalUnit* nalu, guint* vui_flag_position, guint* pic_flag_position) {
+gst_h264_parser_find_sps(GstH264NalUnit* nalu, guint* vui_flag_position
+                         , guint* pic_flag_position
+                         , guint* timing_info_present_flag) {
     NalReader nr;
     GST_DEBUG("finding pic_struct_present_flag in SPS");
 
     nal_reader_init(&nr, nalu->data + nalu->offset + nalu->header_bytes,
         nalu->size - nalu->header_bytes);
     GstH264SPS sps;
-    gst_h264_parse_sps_data(&nr, &sps, vui_flag_position, pic_flag_position);
+    gst_h264_parse_sps_data(&nr, &sps, vui_flag_position, pic_flag_position, timing_info_present_flag);
 }
 
 /**
@@ -2024,7 +2033,7 @@ gst_h264_parse_subset_sps (GstH264NalUnit * nalu, GstH264SPS * sps)
   nal_reader_init (&nr, nalu->data + nalu->offset + nalu->header_bytes,
       nalu->size - nalu->header_bytes);
 
-  if (!gst_h264_parse_sps_data (&nr, sps, NULL, NULL))
+  if (!gst_h264_parse_sps_data (&nr, sps, NULL, NULL, NULL))
     goto error;
 
   if (sps->profile_idc == GST_H264_PROFILE_MULTIVIEW_HIGH ||
@@ -3286,7 +3295,7 @@ gst_h264_create_sei_memory_avc (guint8 nal_length_size, GArray * messages)
 }
 
 GstMemory*
-gst_h264_create_vui_params(guint8 start_code_prefix_length, GstH264VUIParams *vui_parameters) {
+gst_h264_parser_create_vui_params(guint8 start_code_prefix_length, GstH264VUIParams *vui_parameters) {
   NalWriter nw;
 
   nal_writer_init (&nw, start_code_prefix_length, FALSE);
@@ -3296,6 +3305,11 @@ gst_h264_create_vui_params(guint8 start_code_prefix_length, GstH264VUIParams *vu
   WRITE_UINT8(&nw, vui_parameters->video_signal_type_present_flag ? 1 : 0, 1);
   WRITE_UINT8(&nw, vui_parameters->chroma_loc_info_present_flag ? 1 : 0, 1);
   WRITE_UINT8(&nw, vui_parameters->timing_info_present_flag ? 1 : 0, 1);
+  if (vui_parameters->timing_info_present_flag) {
+  	WRITE_UINT32(&nw, vui_parameters->num_units_in_tick, 32);
+  	WRITE_UINT32(&nw, vui_parameters->time_scale, 32);
+  	WRITE_UINT8(&nw, vui_parameters->fixed_frame_rate_flag ? 1 : 0, 1);
+  }
   WRITE_UINT8(&nw, vui_parameters->nal_hrd_parameters_present_flag ? 1 : 0, 1);
   WRITE_UINT8(&nw, vui_parameters->vcl_hrd_parameters_present_flag ? 1 : 0, 1);
   WRITE_UINT8(&nw, vui_parameters->pic_struct_present_flag ? 1 : 0, 1);
@@ -3306,6 +3320,68 @@ gst_h264_create_vui_params(guint8 start_code_prefix_length, GstH264VUIParams *vu
 error:
   nal_writer_reset (&nw);
   return NULL;
+}
+
+GstMemory* 
+gst_h264_parser_create_timing_info(guint8 start_code_prefix_length
+								   , guint32 num_units_in_tick
+								   , guint32 time_scale
+								   , gboolean fixed_frame_rate_flag) {
+  NalWriter nw;
+
+  nal_writer_init (&nw, start_code_prefix_length, FALSE);
+  WRITE_UINT32(&nw, num_units_in_tick, 32);
+  WRITE_UINT32(&nw, time_scale, 32);
+  WRITE_UINT8(&nw, fixed_frame_rate_flag ? 1 : 0, 1);
+  
+  return nal_writer_reset_and_get_memory (&nw);
+
+error:
+  nal_writer_reset (&nw);
+  return NULL;			  
+}
+
+GstMemory* 
+gst_h264_parser_insert_mem(GstMemory* into_mem, GstMemory* mem, guint bit_position, guint bit_length) {
+  NalWriter nw;
+  GstMemory* result = NULL;
+  GstMapInfo into_map_info, map_info;
+
+  if (gst_memory_map(into_mem, &into_map_info, GST_MAP_READ)) {
+	if (gst_memory_map(mem, &map_info, GST_MAP_READ)) {
+  		nal_writer_init (&nw, 3, FALSE);
+  
+  		guint into_byte_index = bit_position / 8;
+  		guint into_bit_shift = bit_position % 8;
+  		nal_writer_put_bytes(&nw, into_map_info.data, into_byte_index);
+  		if (into_bit_shift) {
+  			guint8 data = *(into_map_info.data + into_byte_index + 1);
+  			data = data >> (8 - into_bit_shift);
+  			WRITE_UINT8(&nw, data, into_bit_shift);
+  		}
+
+  		guint byte_index = bit_length / 8;
+  		guint bit_shift = bit_length % 8;
+  		nal_writer_put_bytes(&nw, map_info.data, byte_index);
+  		if (bit_shift) {
+  			guint8 data = *(map_info.data + byte_index + 1);
+  			data = data >> (8 - bit_shift);
+  			WRITE_UINT8(&nw, data, bit_shift);
+  		}
+  		  		
+  		result = nal_writer_reset_and_get_memory (&nw);
+  		gsize mem_size = gst_memory_get_sizes(result, NULL, NULL);
+  		gst_memory_resize(result, 3, mem_size - 3);
+  		gst_memory_unmap(mem, &map_info);
+  	}
+  	 gst_memory_unmap(into_mem, &into_map_info);
+  }
+  
+  return result;
+
+error:
+  nal_writer_reset (&nw);
+  return NULL;	
 }
 
 static GstBuffer *
