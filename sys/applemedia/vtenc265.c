@@ -717,6 +717,34 @@ gst_vtenc_is_negotiated (GstVTEnc265 * self)
 }
 
 static gboolean
+gst_vtenc_caps_set_level_tier_and_profile(GstCaps *caps, CMFormatDescriptionRef fmt) {
+	const uint8_t *vps = nil;
+    size_t vpsSize = 0, vpsCount = 0;
+    gboolean result = FALSE;
+    
+    OSStatus statusCode = CMVideoFormatDescriptionGetHEVCParameterSetAtIndex(fmt, 0, &vps, &vpsSize, &vpsCount, 0);
+    if (statusCode == noErr) {
+    	//GST_MEMDUMP("VPS", vps, vpsSize);
+    	size_t ltp_size = 0;
+    	uint8_t* ltp = g_malloc(vpsSize);
+    	for (size_t i = 0; i < vpsSize; ++i) {
+    		if (i > 1) {
+    			if (vps[i - 2] == 0 && vps[i - 1] == 0 && vps[i] == 0x03) {
+    				continue;
+    			}
+    		}
+    		ltp[ltp_size] = vps[i];
+    		++ltp_size;
+    	}
+    	//GST_MEMDUMP("LTP", ltp, ltp_size);
+        result = gst_codec_utils_h265_caps_set_level_tier_and_profile (caps, ltp + 6, ltp_size - 6);
+        g_free(ltp);
+    }
+    
+    return result;
+}
+
+static gboolean
 gst_vtenc_negotiate_downstream (GstVTEnc265 * self, CMSampleBufferRef sbuf)
 {
   gboolean result;
@@ -743,8 +771,8 @@ GST_DEBUG_OBJECT(self, "gst_vtenc_negotiate_downstream");
   if (self->details->format_id == kCMVideoCodecType_HEVC) {
     CMFormatDescriptionRef fmt;
     CFDictionaryRef atoms;
-    CFStringRef avccKey;
-    CFDataRef avcc;
+    CFStringRef hvccKey;
+    CFDataRef hvcc;
     guint8 *codec_data;
     gsize codec_data_size;
     GstBuffer *codec_data_buf;
@@ -752,20 +780,21 @@ GST_DEBUG_OBJECT(self, "gst_vtenc_negotiate_downstream");
     fmt = CMSampleBufferGetFormatDescription (sbuf);
     atoms = CMFormatDescriptionGetExtension (fmt,
         kCMFormatDescriptionExtension_SampleDescriptionExtensionAtoms);
-    avccKey = CFStringCreateWithCString (NULL, "hvcC", kCFStringEncodingUTF8);
-    avcc = CFDictionaryGetValue (atoms, avccKey);
-    CFRelease (avccKey);
-    codec_data_size = CFDataGetLength (avcc);
+    hvccKey = CFStringCreateWithCString (NULL, "hvcC", kCFStringEncodingUTF8);
+    hvcc = CFDictionaryGetValue (atoms, hvccKey);
+    CFRelease (hvccKey);
+    codec_data_size = CFDataGetLength (hvcc);
     codec_data = g_malloc (codec_data_size);
-    CFDataGetBytes (avcc, CFRangeMake (0, codec_data_size), codec_data);
+    CFDataGetBytes (hvcc, CFRangeMake (0, codec_data_size), codec_data);
     codec_data_buf = gst_buffer_new_wrapped (codec_data, codec_data_size);
 
     gst_structure_set (s, "codec_data", GST_TYPE_BUFFER, codec_data_buf, NULL);
-    GST_MEMDUMP("codec_data", codec_data, codec_data_size);
-
-    //gst_codec_utils_h265_caps_set_level_tier_and_profile (caps, sps, 3);
-
-    gst_buffer_unref (codec_data_buf);
+    //GST_MEMDUMP("codec_data", codec_data, codec_data_size);
+	gst_buffer_unref (codec_data_buf);
+	
+	
+	gboolean rr = gst_vtenc_caps_set_level_tier_and_profile(caps, fmt);
+	GST_DEBUG_OBJECT(self, "set level tier prof result %d", rr);
   }
 
   state =
