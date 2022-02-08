@@ -56,7 +56,8 @@ if videotoolbox_dep.found()
     applemedia_sources += [
         'vtenc.c',
         'vtdec.c',
-        'vtenc265.c'
+        'vtenc265.c',
+        'vtdec265.c'
     ]
     applemedia_frameworks += [videotoolbox_dep]
 endif
