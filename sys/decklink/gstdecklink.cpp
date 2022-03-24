@@ -32,6 +32,10 @@
 #include "gstdecklinkvideosrc.h"
 #include "gstdecklinkdeviceprovider.h"
 
+#ifdef G_OS_UNIX
+#include <CoreFoundation/CoreFoundation.h>
+#endif
+
 GST_DEBUG_CATEGORY_STATIC (gst_decklink_debug);
 #define GST_CAT_DEFAULT gst_decklink_debug
 
@@ -1423,6 +1427,112 @@ gst_decklink_device_new (const gchar * model_name, const gchar * display_name,
   return GST_DECKLINK_DEVICE (ret);
 }
 
+static char*
+get_mode_name(IDeckLinkDisplayMode *mode)
+{
+    char* result = NULL;
+
+#ifdef G_OS_WIN32
+    char *name;
+    mode->GetName ((COMSTR_T *) & name);
+    if (name) {
+        CONVERT_COM_STRING (name);
+        result = g_strdup(name);
+        FREE_COM_STRING (name);
+    }
+#else
+    CFStringRef modeName;
+    HRESULT hres = mode->GetName(&modeName);
+    if (hres == S_OK) {
+        const char* name = CFStringGetCStringPtr(modeName, kCFStringEncodingUTF8);
+        result = g_strdup(name);
+        CFRelease(modeName);
+    }
+#endif
+
+    return result;
+}
+
+static char*
+get_serial_number(IDeckLinkConfiguration *config)
+{
+    char* result = NULL;
+
+#ifdef G_OS_WIN32
+    char *serial_number = NULL;
+    config->GetString (bmdDeckLinkConfigDeviceInformationSerialNumber,
+          (COMSTR_T *) & serial_number);
+    if (serial_number) {
+        CONVERT_COM_STRING (serial_number);
+        result = g_strdup(serial_number);
+        FREE_COM_STRING (serial_number);
+    }
+#else
+    CFStringRef serialNumber;
+    HRESULT hres = config->GetString (bmdDeckLinkConfigDeviceInformationSerialNumber,
+          &serialNumber);
+    if (hres == S_OK) {
+        const char* serial_number = CFStringGetCStringPtr(serialNumber, kCFStringEncodingUTF8);
+        result = g_strdup(serial_number);
+        CFRelease(serialNumber);
+    }
+#endif
+
+    return result;
+}
+
+static char*
+get_model_name(IDeckLink *decklink)
+{
+    char* result = NULL;
+
+#ifdef G_OS_WIN32
+    gchar *model_name = NULL;
+    decklink->GetModelName ((COMSTR_T *) & model_name);
+    if (model_name) {
+      CONVERT_COM_STRING (model_name);
+      result = g_strdup(model_name);
+      FREE_COM_STRING (model_name);
+    }
+#else
+    CFStringRef modelName;
+    HRESULT hres = decklink->GetModelName(&modelName);
+    if (hres == S_OK) {
+        const char* model_name = CFStringGetCStringPtr(modelName, kCFStringEncodingUTF8);
+        result = g_strdup(model_name);
+        CFRelease(modelName);
+    }
+#endif
+
+    return result;
+}
+
+static char*
+get_display_name(IDeckLink *decklink)
+{
+    char* result = NULL;
+
+#ifdef G_OS_WIN32
+    gchar *display_name = NULL;
+    decklink->GetDisplayName ((COMSTR_T *) & display_name);
+    if (display_name) {
+      CONVERT_COM_STRING (display_name);
+      result = g_strdup(display_name);
+      FREE_COM_STRING (display_name);
+    }
+#else
+    CFStringRef displayNameString;
+    HRESULT hres = decklink->GetDisplayName(&displayNameString);
+    if (hres == S_OK) {
+        const char* display_name = CFStringGetCStringPtr(displayNameString, kCFStringEncodingUTF8);
+        result = g_strdup(display_name);
+        CFRelease(displayNameString);
+    }
+#endif
+
+    return result;
+}
+
 static gpointer
 init_devices (gpointer data)
 {
@@ -1499,14 +1609,13 @@ init_devices (gpointer data)
                 gst_caps_merge_structure (video_input_caps,
                 gst_decklink_mode_get_generic_structure (mode_enum));
 
-          mode->GetName ((COMSTR_T *) & name);
-          CONVERT_COM_STRING (name);
+          name = get_mode_name(mode);
           GST_DEBUG ("    %s mode: 0x%08x width: %ld height: %ld"
               " fields: 0x%08x flags: 0x%08x", name,
               (int) mode->GetDisplayMode (), mode->GetWidth (),
               mode->GetHeight (), (int) mode->GetFieldDominance (),
               (int) mode->GetFlags ());
-          FREE_COM_STRING (name);
+          g_free (name);
           mode->Release ();
         }
         mode_iter->Release ();
@@ -1546,14 +1655,13 @@ init_devices (gpointer data)
                 gst_caps_merge_structure (video_output_caps,
                 gst_decklink_mode_get_generic_structure (mode_enum));
 
-          mode->GetName ((COMSTR_T *) & name);
-          CONVERT_COM_STRING (name);
+          name = get_mode_name(mode);
           GST_DEBUG ("    %s mode: 0x%08x width: %ld height: %ld"
               " fields: 0x%08x flags: 0x%08x", name,
               (int) mode->GetDisplayMode (), mode->GetWidth (),
               mode->GetHeight (), (int) mode->GetFieldDominance (),
               (int) mode->GetFlags ());
-          FREE_COM_STRING (name);
+          g_free (name);
           mode->Release ();
         }
         mode_iter->Release ();
@@ -1570,11 +1678,9 @@ init_devices (gpointer data)
       GST_WARNING ("selected device does not have config interface: 0x%08lx",
           (unsigned long) ret);
     } else {
-      ret =
-          dev->input.
-          config->GetString (bmdDeckLinkConfigDeviceInformationSerialNumber,
-          (COMSTR_T *) & serial_number);
-      if (ret == S_OK) {
+        serial_number = get_serial_number(dev->input.config);
+
+        if (serial_number) {
         CONVERT_COM_STRING (serial_number);
         dev->output.hw_serial_number = g_strdup (serial_number);
         dev->input.hw_serial_number = g_strdup (serial_number);
@@ -1600,12 +1706,8 @@ init_devices (gpointer data)
       max_channels = tmp_int;
     }
 
-    decklink->GetModelName ((COMSTR_T *) & model_name);
-    if (model_name)
-      CONVERT_COM_STRING (model_name);
-    decklink->GetDisplayName ((COMSTR_T *) & display_name);
-    if (display_name)
-      CONVERT_COM_STRING (display_name);
+    model_name = get_model_name(decklink);
+    display_name = get_display_name(decklink);
 
     if (capture) {
       dev->devices[0] =
@@ -1628,12 +1730,9 @@ init_devices (gpointer data)
           FALSE, i);
     }
 
-    if (model_name)
-      FREE_COM_STRING (model_name);
-    if (display_name)
-      FREE_COM_STRING (display_name);
-    if (serial_number)
-      FREE_COM_STRING (serial_number);
+    g_free (model_name);
+    g_free (display_name);
+    g_free (serial_number);
     gst_caps_unref (video_input_caps);
     gst_caps_unref (video_output_caps);
 

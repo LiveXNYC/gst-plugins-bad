@@ -441,7 +441,7 @@ gst_plugins_bad_args = ['-DHAVE_CONFIG_H']
 configinc = include_directories('.')
 libsinc = include_directories('gst-libs')
 
-python3 = import('python').find_installation()
+# python3 = import('python').find_installation()
 
 gir = find_program('g-ir-scanner', required : get_option('introspection'))
 gnome = import('gnome')
@@ -461,14 +461,14 @@ if get_option('default_library') == 'shared'
   plugins_pkgconfig_install_dir = disabler()
 endif
 
-subdir('gst-libs')
-subdir('gst')
+# subdir('gst-libs')
+# subdir('gst')
 subdir('sys')
-subdir('ext')
-subdir('tests')
-subdir('data')
-subdir('tools')
-subdir('pkgconfig')
+# subdir('ext')
+# subdir('tests')
+# subdir('data')
+# subdir('tools')
+# subdir('pkgconfig')
 
 if have_orcc
   update_orc_dist_files = find_program('scripts/update-orc-dist-files.py')
@@ -517,7 +517,7 @@ endif
 
 configure_file(output : 'config.h', configuration : cdata)
 
-run_command(python3, '-c', 'import shutil; shutil.copy("hooks/pre-commit.hook", ".git/hooks/pre-commit")')
+# run_command(python3, '-c', 'import shutil; shutil.copy("hooks/pre-commit.hook", ".git/hooks/pre-commit")')
 
 subdir('docs')
 

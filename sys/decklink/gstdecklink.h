@@ -29,7 +29,7 @@
 #include <stdint.h>
 
 #ifdef G_OS_UNIX
-#include "linux/DeckLinkAPI.h"
+#include "osx/DeckLinkAPI.h"
 #endif
 
 #ifdef G_OS_WIN32
